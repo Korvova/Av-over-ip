@@ -49,6 +49,7 @@ export default function App() {
   return (
     <div className="layout">
       <nav className="sidebar">
+        <img className="sidebar-logo" src="/rms-logo.png" alt="RMS" title="Russian Multimedia Systems" />
         {pages.map((p) => (
           <button
             key={p.id}

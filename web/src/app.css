@@ -19,6 +19,10 @@ body {
   padding-top: 12px;
   gap: 6px;
 }
+.sidebar-logo {
+  width: 42px;
+  margin: 2px 0 10px;
+}
 .nav-btn {
   width: 48px; height: 48px;
   border: none; border-radius: 10px;
@@ -89,9 +93,11 @@ label input:focus { outline: 2px solid #2d9cdb55; border-color: #2d9cdb; }
 /* ---------- Страница входа ---------- */
 .login-screen {
   height: 100%;
-  display: flex; align-items: center; justify-content: center;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 28px;
   background: linear-gradient(160deg, #123c66 0%, #1d5a94 100%);
 }
+.login-logo { width: 180px; }
 .login-card {
   width: 340px;
   background: #ffffff;

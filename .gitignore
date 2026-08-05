@@ -10,5 +10,10 @@ tools/node_query/
 
 # временные файлы
 _real_snapshot.jpg
+_logo*.png
 *.log
 web/dist/
+
+# дистрибутивы и утилиты (не код проекта)
+*.iso
+rufus*.exe

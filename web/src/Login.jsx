@@ -25,10 +25,10 @@ export default function Login({ onLogin }) {
 
   return (
     <div className="login-screen">
+      <img className="login-logo" src="/rms-logo.png" alt="RMS" />
       <form className="login-card" onSubmit={submit}>
-        <img src="/favicon.svg" alt="" width="56" height="56" />
         <h1>Платформа управления</h1>
-        <p className="login-sub">Система RMS AV-over-IP</p>
+        <p className="login-sub">Russian Multimedia Systems · AV-over-IP</p>
         <label>
           Логин
           <input
