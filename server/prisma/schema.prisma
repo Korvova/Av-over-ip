@@ -1,0 +1,138 @@
+// Платформа управления AV-over-IP — схема БД
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum DeviceType {
+  ENCODER
+  DECODER
+}
+
+enum UserRole {
+  ADMIN
+  USER
+}
+
+/// Энкодер или декодер (HDN-EA900, ASPEED)
+model Device {
+  id        Int        @id @default(autoincrement())
+  type      DeviceType
+  deviceId  Int        /// ID в системе (ТЗ: автоназначение, редактируемый)
+  name      String     /// <=16 символов (ТЗ)
+  mac       String     @unique
+  ip        String
+  netmask   String     @default("255.255.0.0")
+  gateway   String?
+  dhcp      Boolean    @default(false)
+  firmware  String?
+  online    Boolean    @default(false)
+  uptimeSec Int        @default(0)
+  inSystem  Boolean    @default(false) /// false = найден, но не добавлен в систему
+  /// Все настройки устройства (LED, EDID, аудио, RS-232, порты IO/Relay, HDCP...)
+  settings  Json       @default("{}")
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  routesAsEncoder Route[]          @relation("RouteEncoder")
+  routesAsDecoder Route[]          @relation("RouteDecoder")
+  wallPanels      VideoWallPanel[]
+
+  @@unique([type, deviceId])
+}
+
+/// Маршрут сигнала: какой энкодер подан на декодер.
+/// signal: video | audio | usb | ir | rs232 | cec
+/// Для матриц страницы «Коммутация» — video/audio/usb;
+/// ir/rs232/cec — независимая маршрутизация из настроек декодера («Блокировка маршрутизации»).
+model Route {
+  id        Int     @id @default(autoincrement())
+  signal    String
+  decoder   Device  @relation("RouteDecoder", fields: [decoderId], references: [id], onDelete: Cascade)
+  decoderId Int
+  encoder   Device? @relation("RouteEncoder", fields: [encoderId], references: [id], onDelete: SetNull)
+  encoderId Int?    /// null = источник не назначен
+  /// true = «С потоком» (следует за видео), false = явно выбранный энкодер
+  follow    Boolean @default(true)
+
+  @@unique([signal, decoderId])
+}
+
+/// Видеостена (ТЗ: максимум 9)
+model VideoWall {
+  id            Int              @id @default(autoincrement())
+  wallId        Int              @unique /// 1..9
+  name          String
+  rows          Int
+  cols          Int
+  monitoring    Boolean          @default(false)
+  bezel         Json             @default("{}") /// компенсация рамок панелей
+  /// id энкодера, растянутого на всю стену (null = мозаика/пусто)
+  spanEncoderId Int?
+  panels        VideoWallPanel[]
+  presets       WallPreset[]
+}
+
+/// Панель видеостены — привязка декодера к позиции (строка/столбец)
+model VideoWallPanel {
+  id        Int       @id @default(autoincrement())
+  wall      VideoWall @relation(fields: [wallId], references: [id], onDelete: Cascade)
+  wallId    Int
+  row       Int
+  col       Int
+  decoder   Device?   @relation(fields: [decoderId], references: [id], onDelete: SetNull)
+  decoderId Int?
+
+  @@unique([wallId, row, col])
+}
+
+/// Пресет видеостены (ТЗ: Имя видеостены / Имя пресета / Класс / Источник)
+model WallPreset {
+  id       Int       @id @default(autoincrement())
+  wall     VideoWall @relation(fields: [wallId], references: [id], onDelete: Cascade)
+  wallId   Int
+  name     String
+  class    String    @default("A")
+  /// раскладка: какой источник на какую панель (или один на всю стену)
+  layout   Json      @default("{}")
+}
+
+/// Администратор + Пользователь 1/2/3 (ТЗ, п. II.1)
+model User {
+  id          Int       @id @default(autoincrement())
+  login       String    @unique
+  password    String
+  role        UserRole
+  displayName String
+  presets     Preset[]
+  uiLayout    UiLayout?
+}
+
+/// Пользовательский пресет коммутации (кнопки Preset 1..4 на рис.1)
+model Preset {
+  id     Int    @id @default(autoincrement())
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId Int
+  name   String
+  /// снимок маршрутов: [{signal, decoderId, encoderId}]
+  routes Json   @default("[]")
+}
+
+/// Раскладка страницы «Интерфейс пользователя» (конструктор, рис.1) — своя у каждого пользователя
+model UiLayout {
+  id     Int  @id @default(autoincrement())
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId Int  @unique
+  /// листы с карточками источников/потребителей: [{title, cards:[{kind, deviceId, x, y, label}]}]
+  pages  Json @default("[]")
+}
+
+/// Настройки самой ПУ: firstRun, режим видео LAN, master/slave и т.д.
+model PlatformSetting {
+  key   String @id
+  value Json
+}
