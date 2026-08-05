@@ -14,13 +14,29 @@ HDN-EA900 на чипах ASPEED AST1530/1535, JPEG2000).
 - Устройства: Telnet (порт 24), команды `astparam` / `e e_...`, discovery через
   `node_query` + ARP, видеостены Video Wall API v2, MJPEG-превью с порта 8080
 
-## Запуск
+## Установка на сервер (Ubuntu 22.04/24.04) — рекомендуемый способ
+
+```bash
+git clone https://github.com/Korvova/Av-over-ip.git /opt/ekoder
+sudo bash /opt/ekoder/deploy/install-ubuntu.sh
+```
+
+Скрипт ставит Node.js 22 + PostgreSQL, собирает фронтенд, применяет миграции и
+создаёт systemd-службу `ekoder` с автозапуском. Веб-интерфейс: `http://<ip>:8080`.
+
+**Обновление**: страница «Настройка платформы управления» → «Проверить обновления» →
+«Обновить из GitHub» — платформа сама скачает свежую версию, пересоберётся и
+перезапустится (или вручную: `bash deploy/update.sh && sudo systemctl restart ekoder`).
+
+## Запуск для разработки (Windows/любая ОС)
 
 ```bash
 # база: PostgreSQL, создать БД ekoder, настроить server/.env (см. .env.example)
 cd server && npm install && npx prisma migrate dev && npm run dev   # порт 8080
-cd web && npm install && npm run dev                                # порт 5173
+cd web && npm install && npm run dev                                # порт 5173 (горячая перезагрузка)
 ```
+
+Production-режим на Windows одним файлом: `start.bat` (соберёт фронт и поднимет всё на 8080).
 
 Драйвер устройств переключается в `server/.env`:
 `DEVICE_DRIVER=hdn900` — реальное железо, `mock` — эмулятор для разработки без устройств.

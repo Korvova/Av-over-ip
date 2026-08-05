@@ -11,3 +11,4 @@ tools/node_query/
 # временные файлы
 _real_snapshot.jpg
 *.log
+web/dist/

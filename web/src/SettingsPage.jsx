@@ -8,6 +8,9 @@ export default function SettingsPage({ onOpenWizard }) {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [ms, setMs] = useState({ role: 'master', peer: '' });
+  const [ver, setVer] = useState(null);
+  const [upd, setUpd] = useState(null);     // результат проверки обновлений
+  const [updating, setUpdating] = useState(false);
   const fileRef = useRef(null);
 
   async function load() {
@@ -15,11 +18,50 @@ export default function SettingsPage({ onOpenWizard }) {
       const s = await api('/api/platform');
       setSettings(s);
       if (s.masterSlave) setMs(s.masterSlave);
+      setVer(await api('/api/platform/version'));
     } catch (e) {
       setError(e.message);
     }
   }
   useEffect(() => { load(); }, []);
+
+  async function checkUpdates() {
+    setError('');
+    setNotice('');
+    try {
+      const r = await api('/api/platform/update/check');
+      setUpd(r);
+      setNotice(r.behind > 0
+        ? `Доступно обновление: +${r.behind} коммит(ов), ${r.remoteCommit}`
+        : 'Установлена последняя версия');
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
+  async function doUpdate() {
+    if (!window.confirm('Обновить платформу из GitHub и перезапустить? Это займёт несколько минут.')) return;
+    setError('');
+    setUpdating(true);
+    try {
+      await api('/api/platform/update', { method: 'POST' });
+      setNotice('Обновление запущено. Платформа перезапустится — страница перезагрузится автоматически.');
+      // ждём перезапуска сервера и перезагружаем страницу
+      const poll = setInterval(async () => {
+        try {
+          await api('/api/health');
+          const v = await api('/api/platform/version');
+          if (!ver || v.commit !== ver.commit) {
+            clearInterval(poll);
+            window.location.reload();
+          }
+        } catch { /* сервер ещё перезапускается */ }
+      }, 5000);
+    } catch (e) {
+      setError(e.message);
+      setUpdating(false);
+    }
+  }
 
   async function run(fn, okMsg) {
     setError('');
@@ -57,6 +99,28 @@ export default function SettingsPage({ onOpenWizard }) {
     <div style={{ maxWidth: 640 }}>
       {error && <div className="form-error">{error}</div>}
       {notice && <div className="form-ok">{notice}</div>}
+
+      <section className="settings-section">
+        <h3>Версия и обновление</h3>
+        <p>
+          Версия: <b>{ver ? `сборка №${ver.build}` : '…'}</b>
+          {ver && <span className="hint"> · коммит {ver.commit} · {ver.date ? ver.date.slice(0, 16) : ''}</span>}
+        </p>
+        <div className="devices-actions">
+          <button className="btn" disabled={updating} onClick={checkUpdates}>Проверить обновления</button>
+          <button
+            className="btn btn-primary"
+            disabled={updating || !upd || upd.behind === 0}
+            onClick={doUpdate}
+          >
+            {updating ? 'Обновление…' : 'Обновить из GitHub'}
+          </button>
+        </div>
+        <p className="hint">
+          Обновление скачает последнюю версию из репозитория, пересоберёт интерфейс,
+          применит миграции базы и перезапустит платформу.
+        </p>
+      </section>
 
       <section className="settings-section">
         <h3>Конфигурация системы</h3>

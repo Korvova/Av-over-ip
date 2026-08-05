@@ -22,6 +22,20 @@ app.use('/api/users', require('./routes/users'));
 app.use('/api/platform', require('./routes/platform'));
 app.use('/api/preview', require('./routes/preview'));
 
+// Production: раздаём собранный фронтенд (web/dist) — один порт на всё.
+// В разработке фронт крутится отдельно на Vite (5173) и папки dist может не быть.
+const path = require('path');
+const fs = require('fs');
+const distDir = path.join(__dirname, '..', '..', 'web', 'dist');
+if (fs.existsSync(distDir)) {
+  const express2 = require('express');
+  app.use(express2.static(distDir));
+  // SPA-fallback: все не-API запросы отдают index.html
+  app.get(/^\/(?!api\/|ws).*/, (_req, res) => {
+    res.sendFile(path.join(distDir, 'index.html'));
+  });
+}
+
 // Единый обработчик ошибок
 app.use((err, _req, res, _next) => {
   console.error(err);

@@ -6,10 +6,40 @@ const { requireAdmin } = require('../auth');
 
 const router = express.Router();
 
+const { versionInfo, checkUpdates, runUpdate, updateStatus } = require('../version');
+
 // GET /api/platform — все настройки ПУ
 router.get('/', requireAdmin, async (_req, res) => {
   const rows = await prisma.platformSetting.findMany();
   res.json(Object.fromEntries(rows.map((r) => [r.key, r.value])));
+});
+
+// GET /api/platform/version — текущая версия (сборка/коммит/дата)
+router.get('/version', requireAdmin, (_req, res) => {
+  res.json(versionInfo());
+});
+
+// GET /api/platform/update/check — есть ли новая версия в GitHub
+router.get('/update/check', requireAdmin, (_req, res) => {
+  try {
+    res.json(checkUpdates());
+  } catch (e) {
+    res.status(502).json({ error: 'Не удалось проверить обновления: ' + (e.message || e) });
+  }
+});
+
+// POST /api/platform/update — самообновление из git + перезапуск
+router.post('/update', requireAdmin, (_req, res) => {
+  try {
+    res.json(runUpdate());
+  } catch (e) {
+    res.status(400).json({ error: String(e.message || e) });
+  }
+});
+
+// GET /api/platform/update/status — ход обновления (хвост лога)
+router.get('/update/status', requireAdmin, (_req, res) => {
+  res.json(updateStatus());
 });
 
 // PUT /api/platform/:key — установить настройку (videoLanMode, firstRun, masterSlave...)

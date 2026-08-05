@@ -1,0 +1,16 @@
+[Unit]
+Description=Платформа управления AV-over-IP
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=__USER__
+WorkingDirectory=__APP_DIR__/server
+ExecStart=/usr/bin/node src/index.js
+Restart=always
+RestartSec=3
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target
