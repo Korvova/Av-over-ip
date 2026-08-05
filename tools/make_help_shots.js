@@ -180,6 +180,23 @@ async function navTo(page, title) {
   ]);
 
   // ---------- 7. Интерфейс пользователя ----------
+  // если у учётки нет раскладки — создаём демо-лист, чтобы скриншоты не были пустыми
+  await page.evaluate(async () => {
+    const t = sessionStorage.getItem('token');
+    const H = { 'Content-Type': 'application/json', Authorization: 'Bearer ' + t };
+    const pages = await (await fetch('/api/users/ui-layout', { headers: H })).json();
+    if (Array.isArray(pages) && pages.length) return;
+    const devs = await (await fetch('/api/devices', { headers: H })).json();
+    const tx = devs.find((d) => d.type === 'ENCODER' && d.inSystem);
+    const rx = devs.find((d) => d.type === 'DECODER' && d.inSystem);
+    const cards = [];
+    if (tx) cards.push({ id: 1, kind: 'source', deviceId: tx.id, label: '', x: 30, y: 30, w: 270 });
+    if (rx) cards.push({ id: 2, kind: 'consumer', deviceId: rx.id, label: 'Главный экран', x: 340, y: 30, w: 200 });
+    await fetch('/api/users/ui-layout', {
+      method: 'PUT', headers: H,
+      body: JSON.stringify({ pages: [{ title: 'Лист 1', cards }] }),
+    });
+  });
   await navTo(page, 'Интерфейс пользователя');
   await shot(page, 'ui_view.png', [
     { selector: '.ui-tabs', n: 1, pad: 2 },
@@ -188,18 +205,24 @@ async function navTo(page, title) {
     { selector: '.card-consumer', n: 4 },
   ]);
 
-  // контекстное меню
-  await page.evaluate(() => {
+  // контекстное меню (если на листе есть потребитель)
+  const hasConsumer = await page.evaluate(() => {
     const c = [...document.querySelectorAll('.ui-card')].find((x) => x.classList.contains('card-consumer'));
+    if (!c) return false;
     const r = c.getBoundingClientRect();
     c.dispatchEvent(new MouseEvent('contextmenu', {
       bubbles: true, cancelable: true, clientX: r.left + 60, clientY: r.top + 40,
     }));
+    return true;
   });
-  await wait(400);
-  await shot(page, 'ui_menu.png', [{ selector: '.ctx-menu', pad: 4 }]);
-  await page.evaluate(() => document.body.click());
-  await wait(300);
+  if (hasConsumer) {
+    await wait(400);
+    await shot(page, 'ui_menu.png', [{ selector: '.ctx-menu', pad: 4 }]);
+    await page.evaluate(() => document.body.click());
+    await wait(300);
+  } else {
+    console.log('- ui_menu.png пропущен: нет карточки потребителя');
+  }
 
   // редактор
   await page.evaluate(() => {
