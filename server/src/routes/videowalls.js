@@ -71,16 +71,10 @@ router.delete('/:id', requireAdmin, async (req, res) => {
 });
 
 // POST /api/walls/:id/panel { row, col, decoderId } — привязка декодера к позиции.
-// Один декодер = один физический экран, поэтому при привязке к новой панели
-// он автоматически отвязывается от всех остальных панелей (любых стен).
+// Один декодер МОЖНО привязать к нескольким панелям (решение заказчика):
+// физически он покажет команду последней применённой панели, ячейки в UI зеркалятся.
 router.post('/:id/panel', requireAdmin, async (req, res) => {
   const { row, col, decoderId } = req.body || {};
-  if (decoderId != null) {
-    await prisma.videoWallPanel.updateMany({
-      where: { decoderId: Number(decoderId) },
-      data: { decoderId: null },
-    });
-  }
   const panel = await prisma.videoWallPanel.update({
     where: {
       wallId_row_col: { wallId: Number(req.params.id), row: Number(row), col: Number(col) },
