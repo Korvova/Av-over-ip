@@ -178,10 +178,20 @@ module.exports = {
         return parseNodeQuery(out);
       } catch { /* следующий */ }
     }
+    // Последний рубеж: сами обходим подсеть видео-порта. Устройства ASPEED молчат
+    // в эфир, поэтому ни mDNS, ни таблица соседей их не показывают — но на Telnet
+    // они отвечают. Достаточно найти одно, дальше node_query отдаст всю сеть.
+    const scanned = await scanForDevice();
+    if (scanned) {
+      const out = await telnetExec(scanned, 'node_query --dump --json');
+      return parseNodeQuery(out);
+    }
     throw new Error(
-      'Устройства не найдены автоматически (mDNS и таблица соседей пусты). ' +
-      'Укажите IP-адрес любого энкодера или декодера вручную — остальные найдутся автоматически. ' +
-      'IP устройства можно посмотреть на его передней панели: удерживать кнопку ▲ (CH SELECT) 5 секунд.'
+      'Устройства не найдены: ни mDNS, ни таблица соседей, ни сканирование подсети ' +
+      'ничего не дали. Проверьте, что кабель видео-сети подключён, устройства включены ' +
+      'и находятся в той же подсети, что и видео-порт платформы. ' +
+      'Либо укажите IP-адрес любого энкодера или декодера вручную — остальные найдутся ' +
+      'автоматически (адрес виден на передней панели устройства: удерживать кнопку ▲ CH SELECT 5 секунд).'
     );
   },
 
@@ -392,6 +402,85 @@ function localIPv4() {
     }
   }
   return out;
+}
+
+/** Сетевые карты с адресом и маской — по ним строим диапазоны сканирования */
+function localNetworks() {
+  const os = require('os');
+  const nets = [];
+  for (const [name, addrs] of Object.entries(os.networkInterfaces())) {
+    for (const a of addrs || []) {
+      if (a.family !== 'IPv4' || a.internal) continue;
+      const prefix = a.cidr ? Number(a.cidr.split('/')[1]) : 24;
+      nets.push({ name, address: a.address, prefix });
+    }
+  }
+  return nets;
+}
+
+const ipToInt = (ip) => ip.split('.').reduce((n, o) => (n << 8 >>> 0) + Number(o), 0) >>> 0;
+const intToIp = (n) => [24, 16, 8, 0].map((s) => (n >>> s) & 255).join('.');
+
+/**
+ * Адреса подсети по порядку. Устройства ASPEED разбросаны по всей автоматической
+ * сети 169.254.x.x, поэтому обходим её последовательно — первое живое находится
+ * обычно за пару секунд.
+ * Диапазон шире /16 не сканируем: это уже не локальная сеть.
+ */
+function* subnetHosts(address, prefix) {
+  const p = Math.max(prefix, 16);
+  const size = 2 ** (32 - p);
+  const base = (ipToInt(address) & (0xffffffff << (32 - p))) >>> 0;
+  const self = ipToInt(address);
+  for (let i = 1; i < size - 1; i++) {
+    const n = (base + i) >>> 0;
+    if (n !== self) yield intToIp(n);
+  }
+}
+
+/** Отвечает ли адрес на Telnet-порт устройства */
+function probeTelnet(ip, timeoutMs = 400) {
+  return new Promise((resolve) => {
+    const socket = new net.Socket();
+    let done = false;
+    const finish = (ok) => {
+      if (done) return;
+      done = true;
+      socket.destroy();
+      resolve(ok);
+    };
+    socket.setTimeout(timeoutMs);
+    socket.once('connect', () => finish(true));
+    socket.once('timeout', () => finish(false));
+    socket.once('error', () => finish(false));
+    socket.connect(TELNET_PORT, ip);
+  });
+}
+
+/**
+ * Обойти подсети сетевых карт и вернуть первый адрес, отозвавшийся на Telnet.
+ * Достаточно одного устройства: node_query на нём отдаст всю сеть целиком.
+ */
+async function scanForDevice(deadlineMs = 20000, concurrency = 384) {
+  const until = Date.now() + deadlineMs;
+  for (const net_ of localNetworks()) {
+    const hosts = subnetHosts(net_.address, net_.prefix);
+    let found = null;
+    let exhausted = false;
+    while (!found && !exhausted && Date.now() < until) {
+      const batch = [];
+      for (let i = 0; i < concurrency; i++) {
+        const next = hosts.next();
+        if (next.done) { exhausted = true; break; }
+        batch.push(next.value);
+      }
+      if (!batch.length) break;
+      const results = await Promise.all(batch.map(async (ip) => ((await probeTelnet(ip)) ? ip : null)));
+      found = results.find(Boolean) || null;
+    }
+    if (found) return found;
+  }
+  return null;
 }
 
 /**
