@@ -162,29 +162,30 @@ module.exports = {
         return parseNodeQuery(out);
       } catch { /* пробуем следующий seed */ }
     }
-    // mDNS: устройства анонсируют себя как ast*; спрашиваем через каждую сетевую карту
-    const mdnsIps = [];
-    for (const ifaceIp of localIPv4()) {
-      for (const found of await mdnsFindAstDevices(3000, ifaceIp)) {
-        if (!mdnsIps.includes(found)) mdnsIps.push(found);
-      }
-    }
-    // Соседи по L2: устройства оседают в таблице ARP/neighbour от собственного трафика,
-    // даже когда multicast режется коммутатором
-    const arpIps = await neighbourCandidates();
-    for (const ip of [...mdnsIps, ...arpIps]) {
+    // Соседи по L2: мгновенно, устройства оседают в таблице ARP/neighbour от своего трафика
+    for (const ip of await neighbourCandidates()) {
       try {
         const out = await telnetExec(ip, 'node_query --dump --json');
         return parseNodeQuery(out);
       } catch { /* следующий */ }
     }
-    // Последний рубеж: сами обходим подсеть видео-порта. Устройства ASPEED молчат
-    // в эфир, поэтому ни mDNS, ни таблица соседей их не показывают — но на Telnet
-    // они отвечают. Достаточно найти одно, дальше node_query отдаст всю сеть.
+    // Обход подсети видео-порта: устройства ASPEED молчат в эфир, поэтому ни mDNS,
+    // ни таблица соседей их не показывают — но на Telnet они отвечают. Достаточно
+    // найти одно, дальше node_query отдаст всю сеть. Обычно занимает пару секунд.
     const scanned = await scanForDevice();
     if (scanned) {
       const out = await telnetExec(scanned, 'node_query --dump --json');
       return parseNodeQuery(out);
+    }
+    // mDNS — в последнюю очередь: оборудование других производителей себя анонсирует,
+    // но ждать ответов дольше, чем просканировать подсеть
+    for (const ifaceIp of localIPv4()) {
+      for (const ip of await mdnsFindAstDevices(2000, ifaceIp)) {
+        try {
+          const out = await telnetExec(ip, 'node_query --dump --json');
+          return parseNodeQuery(out);
+        } catch { /* следующий */ }
+      }
     }
     throw new Error(
       'Устройства не найдены: ни mDNS, ни таблица соседей, ни сканирование подсети ' +

@@ -23,6 +23,7 @@ export default function DevicesPage({ isAdmin, onOpenWizard }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [manualIp, setManualIp] = useState(''); // ручное добавление по IP
+  const [searching, setSearching] = useState(false); // идёт поиск устройств по сети
 
   async function load() {
     try {
@@ -56,12 +57,14 @@ export default function DevicesPage({ isAdmin, onOpenWizard }) {
     return devices.find((d) => d.id === r.encoderId)?.name || '—';
   }
 
-  async function run(fn) {
+  function run(fn) {
     setBusy(true);
     setError('');
-    try { await fn(); await load(); }
-    catch (e) { setError(e.message); }
-    finally { setBusy(false); }
+    return (async () => {
+      try { await fn(); await load(); }
+      catch (e) { setError(e.message); }
+      finally { setBusy(false); }
+    })();
   }
 
   const addByIp = () => run(async () => {
@@ -175,9 +178,18 @@ export default function DevicesPage({ isAdmin, onOpenWizard }) {
               </button>
             )}
             <button className="btn" disabled={busy}
-              onClick={() => run(() => api('/api/devices/discover', { method: 'POST' }))}>
-              Поиск новых устройств
+              onClick={() => {
+                setSearching(true);
+                run(() => api('/api/devices/discover', { method: 'POST' }))
+                  .finally(() => setSearching(false));
+              }}>
+              {searching ? 'Идёт поиск…' : 'Поиск новых устройств'}
             </button>
+            {searching && (
+              <span className="hint">
+                Опрашиваем сеть видео LAN — это занимает несколько секунд.
+              </span>
+            )}
             <button className="btn" disabled={busy} onClick={onOpenWizard}>
               Поиск устройств с помощью проводника
             </button>
