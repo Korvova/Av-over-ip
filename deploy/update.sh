@@ -16,7 +16,9 @@ npx prisma generate
 
 echo "[update] web: сборка фронтенда"
 cd ../web
-npm ci
+# --include=dev обязателен: служба работает с NODE_ENV=production, скрипт наследует
+# эту переменную, и без флага npm ci пропускает vite — сборка падает с «vite: not found»
+npm ci --include=dev
 npm run build
 
 echo "[update] готово — приложение перезапустится"

@@ -15,7 +15,8 @@ npx prisma generate
 
 Write-Output '[update] web: сборка фронтенда'
 Set-Location ..\web
-npm ci
+# --include=dev: без него при NODE_ENV=production не ставится vite и сборка падает
+npm ci --include=dev
 npm run build
 
 Write-Output '[update] готово — приложение перезапустится'

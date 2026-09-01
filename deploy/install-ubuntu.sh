@@ -39,7 +39,7 @@ fi
 
 echo "== 4/6 Зависимости, миграции, сборка =="
 sudo -u "$RUN_USER" bash -c "cd '$APP_DIR/server' && npm ci && npx prisma migrate deploy && npx prisma generate"
-sudo -u "$RUN_USER" bash -c "cd '$APP_DIR/web' && npm ci && npm run build"
+sudo -u "$RUN_USER" bash -c "cd '$APP_DIR/web' && npm ci --include=dev && npm run build"
 
 echo "== 5/6 Служба systemd =="
 sed "s|__APP_DIR__|$APP_DIR|g; s|__USER__|$RUN_USER|g" deploy/ekoder.service > /etc/systemd/system/ekoder.service
