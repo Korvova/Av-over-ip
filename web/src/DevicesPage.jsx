@@ -22,6 +22,7 @@ export default function DevicesPage({ isAdmin, onOpenWizard }) {
   const [openId, setOpenId] = useState(null); // устройство с открытыми настройками
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [manualIp, setManualIp] = useState(''); // ручное добавление по IP
 
   async function load() {
     try {
@@ -62,6 +63,12 @@ export default function DevicesPage({ isAdmin, onOpenWizard }) {
     catch (e) { setError(e.message); }
     finally { setBusy(false); }
   }
+
+  const addByIp = () => run(async () => {
+    const r = await api('/api/devices/add-by-ip', { method: 'POST', body: { ip: manualIp.trim() } });
+    setManualIp('');
+    if (!r.added && r.found) setError('Устройство уже есть в списке');
+  });
 
   const addChecked = () => run(async () => {
     for (const id of Object.keys(checked).filter((k) => checked[k])) {
@@ -178,6 +185,24 @@ export default function DevicesPage({ isAdmin, onOpenWizard }) {
               onClick={() => run(() => api('/api/devices/add-all', { method: 'POST' }))}>
               Добавить все найденные устройства в систему
             </button>
+          </div>
+
+          <div className="devices-actions">
+            <input
+              className="inline-input"
+              placeholder="IP-адрес устройства"
+              value={manualIp}
+              onChange={(e) => setManualIp(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter' && manualIp) addByIp(); }}
+            />
+            <button className="btn" disabled={busy || !manualIp} onClick={addByIp}>
+              Добавить по IP-адресу
+            </button>
+            <span className="hint">
+              Если автопоиск не находит устройства, укажите адрес любого энкодера или декодера —
+              остальные найдутся через него. IP видно на передней панели устройства:
+              удерживать кнопку UP 5 секунд.
+            </span>
           </div>
         </>
       )}

@@ -25,6 +25,14 @@ module.exports = {
     return fleet.map((d) => ({ ...d, online: true }));
   },
 
+  /** Опрос устройства по известному IP (ручное добавление) */
+  async probeByIp(ip) {
+    const found = fleet.find((d) => d.ip === ip);
+    if (!found) throw new Error(`Устройство ${ip} не отвечает`);
+    log(`probeByIp ${ip}: ${found.type}`);
+    return [{ ...found, online: true }];
+  },
+
   /** Статус устройства (онлайн/аптайм) */
   async getStatus(_device) {
     return {

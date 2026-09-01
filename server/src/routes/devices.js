@@ -16,21 +16,18 @@ router.get('/', requireAuth, async (_req, res) => {
   res.json(devices);
 });
 
-// POST /api/devices/discover — «Поиск новых устройств»
-router.post('/discover', requireAdmin, async (_req, res) => {
-  // известные IP как seed: hdn900-драйвер запускает node_query через любое живое устройство
-  const known = await prisma.device.findMany({ select: { ip: true } });
-  let found;
-  try {
-    found = await driver.discover(known.map((d) => d.ip));
-  } catch (e) {
-    return res.status(502).json({ error: String(e.message || e) });
-  }
+/** Занести найденные устройства в БД: автоназначение ID и имён TX-NNN / RX-NNN (ТЗ) */
+async function saveFound(found) {
   let added = 0;
   for (const d of found) {
     const exists = await prisma.device.findUnique({ where: { mac: d.mac } });
-    if (exists) continue;
-    // автоназначение ID и имени TX***/RX*** (ТЗ)
+    if (exists) {
+      // устройство знакомо, но могло сменить адрес — обновляем
+      if (exists.ip !== d.ip) {
+        await prisma.device.update({ where: { id: exists.id }, data: { ip: d.ip, online: true } });
+      }
+      continue;
+    }
     const count = await prisma.device.count({ where: { type: d.type } });
     const num = count + 1;
     await prisma.device.create({
@@ -47,8 +44,38 @@ router.post('/discover', requireAdmin, async (_req, res) => {
     });
     added++;
   }
-  const devices = await prisma.device.findMany();
-  broadcast('devices', devices);
+  broadcast('devices', await prisma.device.findMany());
+  return added;
+}
+
+// POST /api/devices/discover — «Поиск новых устройств»
+router.post('/discover', requireAdmin, async (_req, res) => {
+  // известные IP как seed: hdn900-драйвер запускает node_query через любое живое устройство
+  const known = await prisma.device.findMany({ select: { ip: true } });
+  let found;
+  try {
+    found = await driver.discover(known.map((d) => d.ip));
+  } catch (e) {
+    return res.status(502).json({ error: String(e.message || e) });
+  }
+  const added = await saveFound(found);
+  res.json({ found: found.length, added });
+});
+
+// POST /api/devices/add-by-ip { ip } — ручное добавление по известному адресу.
+// Достаточно одного устройства: через него опрашивается вся сеть.
+router.post('/add-by-ip', requireAdmin, async (req, res) => {
+  const ip = String((req.body && req.body.ip) || '').trim();
+  if (!/^\d{1,3}(\.\d{1,3}){3}$/.test(ip)) {
+    return res.status(400).json({ error: 'Укажите корректный IP-адрес устройства' });
+  }
+  let found;
+  try {
+    found = await driver.probeByIp(ip);
+  } catch (e) {
+    return res.status(502).json({ error: String(e.message || e) });
+  }
+  const added = await saveFound(found);
   res.json({ found: found.length, added });
 });
 

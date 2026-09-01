@@ -155,24 +155,65 @@ module.exports = {
    * Без seed — mDNS-поиск хостов ast* (устройства анонсируют HTTP по mDNS).
    */
   async discover(seedIps = []) {
+    // Достаточно достучаться до ОДНОГО устройства: node_query на нём вернёт всю сеть.
     for (const ip of seedIps) {
       try {
         const out = await telnetExec(ip, 'node_query --dump --json');
         return parseNodeQuery(out);
       } catch { /* пробуем следующий seed */ }
     }
-    // mDNS: ищем хосты ast*, потом через первый найденный делаем node_query
-    const mdnsIps = await mdnsFindAstDevices(4000);
-    // ARP-таблица Windows: устройства шлют broadcast и оседают в ARP,
-    // даже когда multicast (node_query/mDNS) режется свитчом
-    const arpIps = await arpCandidates();
+    // mDNS: устройства анонсируют себя как ast*; спрашиваем через каждую сетевую карту
+    const mdnsIps = [];
+    for (const ifaceIp of localIPv4()) {
+      for (const found of await mdnsFindAstDevices(3000, ifaceIp)) {
+        if (!mdnsIps.includes(found)) mdnsIps.push(found);
+      }
+    }
+    // Соседи по L2: устройства оседают в таблице ARP/neighbour от собственного трафика,
+    // даже когда multicast режется коммутатором
+    const arpIps = await neighbourCandidates();
     for (const ip of [...mdnsIps, ...arpIps]) {
       try {
         const out = await telnetExec(ip, 'node_query --dump --json');
         return parseNodeQuery(out);
       } catch { /* следующий */ }
     }
-    throw new Error('Устройства не найдены: seed-IP, mDNS и ARP не дали результатов');
+    throw new Error(
+      'Устройства не найдены автоматически (mDNS и таблица соседей пусты). ' +
+      'Укажите IP-адрес любого энкодера или декодера вручную — остальные найдутся автоматически. ' +
+      'IP устройства можно посмотреть на его передней панели: удерживать кнопку UP 5 секунд.'
+    );
+  },
+
+  /**
+   * Опрос одного устройства по известному IP (ручное добавление).
+   * Сначала пробуем node_query — он вернёт сразу все устройства сети;
+   * если не вышло — собираем данные самого устройства через lmparam.
+   */
+  async probeByIp(ip) {
+    try {
+      const out = await telnetExec(ip, 'node_query --dump --json');
+      const list = parseNodeQuery(out);
+      if (list.length) return list;
+    } catch { /* пробуем прочитать хотя бы само устройство */ }
+
+    const out = await telnetExec(ip, [
+      'lmparam g IS_HOST', 'lmparam g HOSTNAME', 'lmparam g CH_SELECT', 'lmparam g STATE',
+      'cat /sys/class/net/eth0/address',
+    ]);
+    const macM = out.match(/([0-9a-f]{2}(?::[0-9a-f]{2}){5})/i);
+    const isHost = /(^|\n)\s*y\s*(\n|$)/.test(out) || /IS_HOST=y/.test(out);
+    const hostM = out.match(/(ast\d?-\S+)/i);
+    if (!macM && !hostM) {
+      throw new Error(`Устройство ${ip} не отвечает по Telnet (порт ${TELNET_PORT}) или это не HDN-EA900`);
+    }
+    return [{
+      type: isHost ? 'ENCODER' : 'DECODER',
+      mac: (macM ? macM[1] : '00:00:00:00:00:00').toUpperCase(),
+      ip,
+      hostname: hostM ? hostM[1] : '',
+      online: true,
+    }];
   },
 
   async getStatus(device) {
@@ -306,34 +347,63 @@ module.exports = {
   },
 };
 
-/** Кандидаты из ARP-таблицы Windows: динамические записи 169.254.x.x */
-function arpCandidates() {
+/**
+ * Соседи по L2 из таблицы ARP/neighbour — кандидаты на опрос.
+ * Linux: `ip neigh show` → "169.254.10.2 dev enp46s0 lladdr 6c:df:fb:01:4d:84 REACHABLE"
+ * Windows: `arp -a`      → "  169.254.10.2   6c-df-fb-01-4d-84   dynamic"
+ * Подсеть не фильтруем: на объектах устройства могут быть в любой сети.
+ */
+function neighbourCandidates() {
+  const { exec } = require('child_process');
+  const isWin = process.platform === 'win32';
+  // на Ubuntu net-tools (arp) может быть не установлен — основной путь `ip neigh`
+  const cmd = isWin ? 'arp -a' : 'ip neigh show || arp -an';
   return new Promise((resolve) => {
-    const { exec } = require('child_process');
-    exec('arp -a', { windowsHide: true }, (err, stdout) => {
-      if (err) return resolve([]);
+    exec(cmd, { windowsHide: true, shell: isWin ? undefined : '/bin/sh' }, (err, stdout) => {
+      if (err && !stdout) return resolve([]);
       const ips = [];
       for (const line of String(stdout).split('\n')) {
-        // строка вида: "  169.254.10.2   6c-df-fb-01-4d-84   dynamic"
-        // слово типа записи не проверяем — вывод arp локализован (cp866) и в Node приходит кракозябрами
-        const m = line.match(/^\s*(169\.254\.\d+\.\d+)\s+([0-9a-f]{2}(?:-[0-9a-f]{2}){5})\s/i);
-        if (!m) continue;
-        const mac = m[2].toLowerCase();
-        // отбрасываем broadcast/multicast
-        if (mac.startsWith('ff-ff') || mac.startsWith('01-00-5e')) continue;
-        ips.push(m[1]);
+        // «мёртвые» записи не опрашиваем
+        if (/FAILED|INCOMPLETE|incomplete/i.test(line)) continue;
+        // IP: либо первым словом (ip neigh), либо в скобках (arp -an), либо в колонке (Windows)
+        const ipM = line.match(/(\d{1,3}(?:\.\d{1,3}){3})/);
+        // MAC: с двоеточиями (Linux) или дефисами (Windows)
+        const macM = line.match(/([0-9a-f]{2}(?:[:-][0-9a-f]{2}){5})/i);
+        if (!ipM || !macM) continue;
+        const ip = ipM[1];
+        const mac = macM[1].toLowerCase().replace(/-/g, ':');
+        // отбрасываем broadcast/multicast и собственные адреса
+        if (mac.startsWith('ff:ff') || mac.startsWith('01:00:5e') || mac.startsWith('33:33')) continue;
+        if (ip.endsWith('.255') || ip.startsWith('224.') || ip.startsWith('239.')) continue;
+        if (!ips.includes(ip)) ips.push(ip);
       }
       resolve(ips);
     });
   });
 }
 
-/** mDNS-поиск устройств ast* (Bonjour): возвращает список IP */
-function mdnsFindAstDevices(waitMs) {
+/** Локальные IPv4-адреса машины (для привязки mDNS к нужной сетевой карте) */
+function localIPv4() {
+  const os = require('os');
+  const out = [];
+  for (const addrs of Object.values(os.networkInterfaces())) {
+    for (const a of addrs || []) {
+      if (a.family === 'IPv4' && !a.internal) out.push(a.address);
+    }
+  }
+  return out;
+}
+
+/**
+ * mDNS-поиск устройств ast* (Bonjour): возвращает список IP.
+ * ifaceIp — адрес сетевой карты, в которую смотрит видео-сеть. На машине с двумя
+ * картами без явной привязки запрос уходит не в тот интерфейс и ответов нет.
+ */
+function mdnsFindAstDevices(waitMs, ifaceIp) {
   return new Promise((resolve) => {
     let mdns;
     try {
-      mdns = require('multicast-dns')();
+      mdns = require('multicast-dns')(ifaceIp ? { interface: ifaceIp } : undefined);
     } catch {
       return resolve([]);
     }
