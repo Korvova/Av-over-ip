@@ -13,7 +13,7 @@ RUN_USER="${SUDO_USER:-root}"
 
 echo "== 1/6 Пакеты =="
 apt-get update
-apt-get install -y git curl ca-certificates postgresql
+apt-get install -y git curl ca-certificates postgresql arp-scan
 
 if ! command -v node >/dev/null || [[ "$(node -v)" != v22* ]]; then
   echo "== Node.js 22 =="
@@ -25,6 +25,10 @@ echo "== 2/6 PostgreSQL: база и пароль =="
 sudo -u postgres psql -tc "SELECT 1 FROM pg_database WHERE datname = '$DB_NAME'" | grep -q 1 \
   || sudo -u postgres createdb "$DB_NAME"
 sudo -u postgres psql -c "ALTER USER postgres PASSWORD '$DB_PASS';"
+
+# arp-scan ищет устройства ARP-запросами; выдаём права на сырые сокеты,
+# чтобы служба обходилась без sudo
+setcap cap_net_raw+ep "$(command -v arp-scan)" 2>/dev/null || true
 
 echo "== 3/6 Код приложения =="
 if [ ! -d "$APP_DIR/.git" ]; then

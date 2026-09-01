@@ -176,8 +176,20 @@ module.exports = {
       } catch { /* следующий */ }
     }
     // Обход подсети видео-порта: устройства ASPEED молчат в эфир, поэтому ни mDNS,
-    // ни таблица соседей их не показывают — но на Telnet они отвечают. Достаточно
-    // найти одно, дальше node_query отдаст всю сеть. Обычно занимает пару секунд.
+    // ни таблица соседей их не показывают — но на ARP и Telnet они отвечают.
+    // Достаточно найти одно, дальше node_query отдаст всю сеть.
+    for (const iface of localNetworks()) {
+      const neighbours2 = await arpScan(iface.name);
+      for (const ip of neighbours2) {
+        if (!(await probeTelnet(ip))) continue;
+        try {
+          const out = await telnetExec(ip, 'node_query --dump --json');
+          return parseNodeQuery(out);
+        } catch { /* следующий сосед */ }
+      }
+    }
+    // Если arp-scan недоступен — перебираем подсеть подключениями (медленнее и на сети /16
+    // может упереться в предел таблицы соседей ядра, поэтому только как запасной путь)
     const scanned = await scanForDevice();
     if (scanned) {
       const out = await telnetExec(scanned, 'node_query --dump --json');
@@ -443,6 +455,34 @@ function* subnetHosts(address, prefix) {
     const n = (base + i) >>> 0;
     if (n !== self) yield intToIp(n);
   }
+}
+
+/**
+ * Обход подсети через arp-scan: рассылает ARP-запросы напрямую и потому не забивает
+ * таблицу соседей ядра — в отличие от перебора TCP-подключениями, который на сети /16
+ * упирается в предел таблицы и начинает терять живые устройства.
+ * Возвращает адреса всех откликнувшихся соседей (пусто, если arp-scan не установлен).
+ */
+function arpScan(iface, timeoutMs = 40000) {
+  const { execFile } = require('child_process');
+  const args = ['-I', iface, '--localnet', '--bandwidth=8M', '--retry=1'];
+  const run = (cmd, cmdArgs) =>
+    new Promise((resolve) => {
+      execFile(cmd, cmdArgs, { timeout: timeoutMs, windowsHide: true, maxBuffer: 4 << 20 },
+        (err, stdout) => resolve(String(stdout || '')));
+    });
+  return (async () => {
+    // при установке arp-scan выдаются права на сырые сокеты (setcap), но если их нет —
+    // пробуем через sudo, он настроен на боевом контроллере
+    let out = await run('arp-scan', args);
+    if (!/^\d{1,3}(\.\d{1,3}){3}\s/m.test(out)) out = await run('sudo', ['-n', 'arp-scan', ...args]);
+    const ips = [];
+    for (const line of out.split('\n')) {
+      const m = line.match(/^(\d{1,3}(?:\.\d{1,3}){3})\s+[0-9a-f]{2}(?::[0-9a-f]{2}){5}/i);
+      if (m && !ips.includes(m[1])) ips.push(m[1]);
+    }
+    return ips;
+  })();
 }
 
 /** Отвечает ли адрес на Telnet-порт устройства */
