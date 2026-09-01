@@ -23,21 +23,24 @@ ROOT = "homepage/iniciativa.-proekty-rms/platforma-upravlenija-av-over-ip"
 
 # заголовки страниц: имя файла -> заголовок в вики
 TITLES = {
+    # Статус проставляется эмодзи в начале названия, без пробела:
+    # ✅ готово · 🔜 почти готово · ⌛ в работе · ❓ есть вопросы · 🚀 текущее (только одно)
+    # 🥶 заморожено · 💤 спит · 🆘 завис на сложной задаче · 🤬 не работает · ⟳ смена концепции
     "index": "✅Платформа управления AV-over-IP.",
-    "t-obshhie": "Т. Общие требования",
-    "t-pervyj-zapusk": "Т. Первый запуск",
-    "t-elementy-sistemy": "Т. Элементы системы",
-    "t-enkodery": "Т. Энкодеры",
-    "t-dekodery": "Т. Декодеры",
-    "t-kommutaciya": "Т. Коммутация",
-    "t-videostena": "Т. Видеостена",
-    "t-interfejs-polzovatelya": "Т. Интерфейс пользователя",
-    "t-polzovateli": "Т. Пользователи",
-    "t-nastrojka-platformy": "Т. Настройка платформы",
-    "arxitektura": "Архитектура и стек",
-    "razvertyvanie": "Развёртывание и эксплуатация",
-    "protokol-hdn-ea900": "Протокол HDN-EA900 (ASPEED)",
-    "beinghd": "BeingHD: анализ API",
+    "t-obshhie": "⌛Т. Общие требования",
+    "t-pervyj-zapusk": "🔜Т. Первый запуск",
+    "t-elementy-sistemy": "🔜Т. Элементы системы",
+    "t-enkodery": "⌛Т. Энкодеры",
+    "t-dekodery": "⌛Т. Декодеры",
+    "t-kommutaciya": "✅Т. Коммутация",
+    "t-videostena": "✅Т. Видеостена",
+    "t-interfejs-polzovatelya": "🔜Т. Интерфейс пользователя",
+    "t-polzovateli": "✅Т. Пользователи",
+    "t-nastrojka-platformy": "⌛Т. Настройка платформы",
+    "arxitektura": "✅Архитектура и стек",
+    "razvertyvanie": "✅Развёртывание и эксплуатация",
+    "protokol-hdn-ea900": "✅Протокол HDN-EA900 (ASPEED)",
+    "beinghd": "❓BeingHD: анализ API",
 }
 
 TOKEN = os.environ.get("WIKI_TOKEN", "")
