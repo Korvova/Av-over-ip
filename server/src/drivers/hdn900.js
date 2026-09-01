@@ -162,8 +162,14 @@ module.exports = {
         return parseNodeQuery(out);
       } catch { /* пробуем следующий seed */ }
     }
-    // Соседи по L2: мгновенно, устройства оседают в таблице ARP/neighbour от своего трафика
-    for (const ip of await neighbourCandidates()) {
+    // Соседи по L2: мгновенно, устройства оседают в таблице ARP/neighbour от своего трафика.
+    // Сначала быстрая проверка порта — иначе каждый посторонний сосед (роутер, принтер)
+    // съедал бы полный таймаут Telnet.
+    const neighbours = await neighbourCandidates();
+    const alive = (await Promise.all(
+      neighbours.map(async (ip) => ((await probeTelnet(ip)) ? ip : null)),
+    )).filter(Boolean);
+    for (const ip of alive) {
       try {
         const out = await telnetExec(ip, 'node_query --dump --json');
         return parseNodeQuery(out);
