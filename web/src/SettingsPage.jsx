@@ -11,6 +11,7 @@ export default function SettingsPage({ onOpenWizard }) {
   const [ver, setVer] = useState(null);
   const [upd, setUpd] = useState(null);     // результат проверки обновлений
   const [updating, setUpdating] = useState(false);
+  const [updLog, setUpdLog] = useState(''); // журнал, если обновление сорвалось
   const fileRef = useRef(null);
 
   async function load() {
@@ -46,10 +47,18 @@ export default function SettingsPage({ onOpenWizard }) {
     try {
       await api('/api/platform/update', { method: 'POST' });
       setNotice('Обновление запущено. Платформа перезапустится — страница перезагрузится автоматически.');
-      // ждём перезапуска сервера и перезагружаем страницу
+      setUpdLog('');
+      // ждём перезапуска сервера; если обновление сорвалось — показываем журнал
       const poll = setInterval(async () => {
         try {
-          await api('/api/health');
+          const st = await api('/api/platform/update/status');
+          if (st.failed) {
+            clearInterval(poll);
+            setUpdating(false);
+            setNotice('');
+            setUpdLog((st.log || '').split('\n').slice(-15).join('\n'));
+            return;
+          }
           const v = await api('/api/platform/version');
           if (!ver || v.commit !== ver.commit) {
             clearInterval(poll);
@@ -106,6 +115,19 @@ export default function SettingsPage({ onOpenWizard }) {
           Версия: <b>{ver ? `сборка №${ver.build}` : '…'}</b>
           {ver && <span className="hint"> · коммит {ver.commit} · {ver.date ? ver.date.slice(0, 16) : ''}</span>}
         </p>
+        {ver && ver.needsRestart && (
+          <div className="help-note">
+            Файлы платформы обновлены до сборки №{ver.build}, но запущена ещё
+            сборка №{ver.runningBuild} — служба не перезапустилась. Выполните на сервере
+            <b> sudo systemctl restart ekoder</b>, иначе платформа работает по-старому.
+          </div>
+        )}
+        {updLog && (
+          <>
+            <div className="form-error">Обновление не завершилось. Последние строки журнала:</div>
+            <pre className="upd-log">{updLog}</pre>
+          </>
+        )}
         <div className="devices-actions">
           <button className="btn" disabled={updating} onClick={checkUpdates}>Проверить обновления</button>
           <button

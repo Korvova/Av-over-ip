@@ -12,17 +12,35 @@ function git(cmd) {
     .trim();
 }
 
+/**
+ * Версия кода, который реально выполняется: снимается один раз при старте процесса.
+ * После обновления файлы в папке уже новые, а в памяти живёт прежний код — без этого
+ * снимка платформа показывала бы свежую версию, ведя себя по-старому.
+ */
+const RUNNING = (() => {
+  try {
+    return { commit: git('rev-parse --short HEAD'), build: Number(git('rev-list --count HEAD')) };
+  } catch {
+    return { commit: '', build: 0 };
+  }
+})();
+
 /** Текущая версия: номер сборки = число коммитов, короткий хэш, дата коммита */
 function versionInfo() {
   try {
+    const commit = git('rev-parse --short HEAD');
     return {
       build: Number(git('rev-list --count HEAD')),
-      commit: git('rev-parse --short HEAD'),
+      commit,
       date: git('log -1 --format=%ci'),
       branch: git('rev-parse --abbrev-ref HEAD'),
+      // файлы обновлены, но процесс всё ещё выполняет прежний код
+      needsRestart: Boolean(RUNNING.commit) && RUNNING.commit !== commit,
+      runningCommit: RUNNING.commit,
+      runningBuild: RUNNING.build,
     };
   } catch (e) {
-    return { build: 0, commit: 'нет git', date: '', branch: '' };
+    return { build: 0, commit: 'нет git', date: '', branch: '', needsRestart: false };
   }
 }
 
@@ -35,6 +53,7 @@ function checkUpdates() {
 }
 
 let updating = false;
+let updateFailed = false;   // обновление сорвалось — код в памяти мог остаться прежним
 
 /**
  * Запустить самообновление: git reset на origin/main, npm ci, сборка фронта,
@@ -43,6 +62,7 @@ let updating = false;
  * Защита: не обновляемся при незакоммиченных изменениях (машина разработчика).
  */
 function runUpdate() {
+  updateFailed = false;
   if (updating) throw new Error('Обновление уже идёт');
   const dirty = git('status --porcelain');
   if (dirty) {
@@ -66,7 +86,10 @@ function runUpdate() {
       console.log('Обновление применено, перезапуск…');
       setTimeout(() => process.exit(0), 500);
     } else {
+      // важно: файлы могли частично обновиться, а процесс продолжает работать
+      // на прежнем коде — сообщаем об этом в интерфейс, а не молчим
       updating = false;
+      updateFailed = true;
     }
   });
   return { started: true };
@@ -75,7 +98,7 @@ function runUpdate() {
 function updateStatus() {
   let log = '';
   try { log = fs.readFileSync(UPDATE_LOG, 'utf8').slice(-4000); } catch { /* нет лога */ }
-  return { updating, log };
+  return { updating, failed: updateFailed, log };
 }
 
 module.exports = { versionInfo, checkUpdates, runUpdate, updateStatus };

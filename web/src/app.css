@@ -470,3 +470,11 @@ label input:focus { outline: 2px solid #2d9cdb55; border-color: #2d9cdb; }
   background: #fff8e6; border-left: 3px solid #f39c12;
   padding: 10px 14px; border-radius: 0 8px 8px 0; margin: 10px 0;
 }
+
+/* журнал сорвавшегося обновления */
+.upd-log {
+  background: #1a2733; color: #d7e3ee;
+  padding: 10px 12px; border-radius: 8px;
+  font-family: Consolas, monospace; font-size: 12px; line-height: 1.5;
+  max-height: 220px; overflow: auto; white-space: pre-wrap;
+}
