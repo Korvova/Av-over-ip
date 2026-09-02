@@ -9,7 +9,8 @@
 //
 // Коммутация (Console APIs v2):
 //   канал 0000..9999; энкодер: e e_reconnect::{ch} — задать канал и запустить сервисы;
-//   декодер: e e_reconnect::{ch}::{v|a|u|r|s|c} — подключить нужный сигнал к каналу,
+//   декодер: e e_reconnect::{ip хоста}::{v|a|u|r|s|c} — подключить сигнал к энкодеру
+//   (форма с номером канала {ch} тоже есть, но требует рабочего node_query у декодера),
 //   e e_stop_link::{сигналы} — отключить. Для «один-ко-многим» нужен multicast_on=y.
 //
 // Discovery: node_query --dump --json (запускается НА любом известном устройстве
@@ -456,9 +457,12 @@ module.exports = {
       await telnetExec(decoder.ip, `e e_stop_link::${letter}`);
       return { ok: true, stopped: true };
     }
-    const ch = channelOf(encoder);
-    await telnetExec(decoder.ip, `e e_reconnect::${ch}::${letter}`);
-    return { ok: true, channel: ch };
+    // Подключаем по IP хоста, а не по номеру канала: по каналу декодер ищет хост
+    // сам через node_query, а он в сети с IGMP snooping без querier'а видит не всех —
+    // декодер зависал в SUSPENDING/WAITING_HOST_MODE и экран оставался с заставкой.
+    // По IP хост находится сразу, multicast-группа берётся из его канала.
+    await telnetExec(decoder.ip, `e e_reconnect::${encoder.ip}::${letter}`);
+    return { ok: true, host: encoder.ip, channel: channelOf(encoder) };
   },
 
   /**

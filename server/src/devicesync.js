@@ -8,12 +8,14 @@ const { broadcast } = require('./ws');
 /** Занести найденные устройства в БД: автоназначение ID и имён TX-NNN / RX-NNN (ТЗ) */
 async function saveFound(found) {
   let added = 0;
+  const movedEncoders = []; // энкодеры, сменившие адрес: декодеры подключены к ним по IP
   for (const d of found) {
     const exists = await prisma.device.findUnique({ where: { mac: d.mac } });
     if (exists) {
       // устройство знакомо, но могло сменить адрес — обновляем
       if (exists.ip !== d.ip) {
-        await prisma.device.update({ where: { id: exists.id }, data: { ip: d.ip, online: true } });
+        const upd = await prisma.device.update({ where: { id: exists.id }, data: { ip: d.ip, online: true } });
+        if (upd.type === 'ENCODER' && upd.inSystem) movedEncoders.push(upd);
       }
       continue;
     }
@@ -32,6 +34,15 @@ async function saveFound(found) {
       },
     });
     added++;
+  }
+  // Декодеры держат связь с энкодером по его IP — после смены адреса переподключаем
+  // все маршруты этого энкодера (адреса декодеров к этому моменту уже обновлены).
+  for (const enc of movedEncoders) {
+    const routes = await prisma.route.findMany({ where: { encoderId: enc.id }, include: { decoder: true } });
+    for (const r of routes) {
+      try { await driver.route(r.signal, enc, r.decoder); }
+      catch (e) { console.warn(`переподключение ${r.decoder.name} -> ${enc.name} (${r.signal}):`, e.message); }
+    }
   }
   broadcast('devices', await prisma.device.findMany());
   return added;
