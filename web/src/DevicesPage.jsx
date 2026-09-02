@@ -25,6 +25,7 @@ export default function DevicesPage({ isAdmin, onOpenWizard }) {
   const [manualIp, setManualIp] = useState(''); // ручное добавление по IP
   const [searching, setSearching] = useState(false); // идёт поиск устройств по сети
   const [mcast, setMcast] = useState(null);          // режим вещания устройств
+  const [notice, setNotice] = useState('');           // что происходит после включения режима
 
   async function load() {
     try {
@@ -42,7 +43,11 @@ export default function DevicesPage({ isAdmin, onOpenWizard }) {
       const r = await api('/api/devices/multicast', { method: 'POST' });
       if (r.errors && r.errors.length) setError(r.errors.join('; '));
       setMcast(null);
-      setTimeout(loadMulticast, 60000); // после перезагрузки устройств
+      setNotice(`Многоадресный режим включён на ${r.changed} из ${r.total} устройств, они перезагружаются — `
+        + 'около минуты. Адреса после перезагрузки обновятся сами, режим проверится повторно.');
+      // после перезагрузки устройства обычно поднимаются с новыми адресами:
+      // сервер сам переищет их, а мы через полторы минуты перечитаем список и режим
+      setTimeout(async () => { await loadMulticast(); await load(); setNotice(''); }, 90000);
     });
   };
   // проверяем режим вещания: без многоадресного один энкодер обслуживает лишь один экран
@@ -111,11 +116,16 @@ export default function DevicesPage({ isAdmin, onOpenWizard }) {
 
       {error && <div className="form-error">{error}</div>}
 
+      {notice && <div className="help-note">{notice}</div>}
+
       {mcast && mcast.off > 0 && (
         <div className="help-note">
           <b>Один источник выводится только на один экран.</b> На {mcast.off} из {mcast.total} устройств
           выключен многоадресный режим — в нём энкодер отдаёт поток одному декодеру, и экраны
           перехватывают картинку друг у друга. Для работы «на все декодеры» и видеостен режим нужно включить.
+          {mcast.unreachable > 0 && (
+            <> Ещё {mcast.unreachable} не ответили — возможно, перезагружаются; проверка повторится.</>
+          )}
           <div style={{ marginTop: 8 }}>
             <button className="btn btn-primary btn-small" disabled={busy} onClick={enableMulticast}>
               Включить многоадресный режим

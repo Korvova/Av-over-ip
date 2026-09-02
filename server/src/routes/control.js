@@ -3,6 +3,7 @@ const express = require('express');
 const prisma = require('../db');
 const driver = require('../drivers');
 const { requireAdmin } = require('../auth');
+const { withFreshIp } = require('../devicesync');
 
 const router = express.Router();
 
@@ -18,7 +19,7 @@ router.get('/:id/params', requireAdmin, async (req, res) => {
   const device = await getDevice(req, res);
   if (!device) return;
   try {
-    const live = await driver.readParams(device);
+    const live = await withFreshIp(device, (dev) => driver.readParams(dev));
     await prisma.device.update({
       where: { id: device.id },
       data: { settings: { ...device.settings, ...live.settings } },
@@ -35,7 +36,7 @@ router.post('/:id/param', requireAdmin, async (req, res) => {
   if (!device) return;
   const { key, value } = req.body || {};
   try {
-    const result = await driver.setParam(device, key, value);
+    const result = await withFreshIp(device, (dev) => driver.setParam(dev, key, value));
     // фиксируем применённую настройку в БД
     await prisma.device.update({
       where: { id: device.id },
@@ -52,7 +53,7 @@ router.post('/:id/network', requireAdmin, async (req, res) => {
   const device = await getDevice(req, res);
   if (!device) return;
   try {
-    await driver.setNetwork(device, req.body || {});
+    await withFreshIp(device, (dev) => driver.setNetwork(dev, req.body || {}));
     const updated = await prisma.device.update({
       where: { id: device.id },
       data: {
@@ -73,7 +74,7 @@ router.post('/:id/reboot', requireAdmin, async (req, res) => {
   const device = await getDevice(req, res);
   if (!device) return;
   try {
-    res.json(await driver.reboot(device));
+    res.json(await withFreshIp(device, (dev) => driver.reboot(dev)));
   } catch (e) {
     res.status(502).json({ error: String(e.message || e) });
   }
@@ -84,7 +85,7 @@ router.post('/:id/factory-reset', requireAdmin, async (req, res) => {
   const device = await getDevice(req, res);
   if (!device) return;
   try {
-    res.json(await driver.factoryReset(device));
+    res.json(await withFreshIp(device, (dev) => driver.factoryReset(dev)));
   } catch (e) {
     res.status(502).json({ error: String(e.message || e) });
   }

@@ -20,7 +20,7 @@ router.post('/login', async (req, res) => {
       error: 'Первый запуск: вход доступен только Администратору. Выполните первичную настройку.',
     });
   }
-  const token = createSession(user);
+  const token = await createSession(user);
   res.json({
     token,
     user: { id: user.id, login: user.login, role: user.role, displayName: user.displayName },
@@ -42,15 +42,21 @@ router.post('/password', requireAuth, async (req, res) => {
 });
 
 // POST /api/auth/logout
-router.post('/logout', requireAuth, (req, res) => {
+router.post('/logout', requireAuth, async (req, res) => {
   const token = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
-  destroySession(token);
+  await destroySession(token);
   res.json({ ok: true });
 });
 
-// GET /api/auth/me
-router.get('/me', requireAuth, (req, res) => {
-  res.json(req.session);
+// GET /api/auth/me — кто вошёл (восстановление сессии после перезагрузки страницы)
+router.get('/me', requireAuth, async (req, res) => {
+  const user = await prisma.user.findUnique({ where: { id: req.session.userId } });
+  if (!user) return res.status(401).json({ error: 'Требуется вход в систему' });
+  const firstRunRow = await prisma.platformSetting.findUnique({ where: { key: 'firstRun' } });
+  res.json({
+    user: { id: user.id, login: user.login, role: user.role, displayName: user.displayName },
+    firstRun: firstRunRow ? firstRunRow.value === true : true,
+  });
 });
 
 module.exports = router;

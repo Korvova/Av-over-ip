@@ -110,6 +110,16 @@ model User {
   displayName String
   presets     Preset[]
   uiLayout    UiLayout?
+  sessions    Session[]
+}
+
+/// Сессия входа: токен живёт в БД, чтобы переживать перезапуск и обновление платформы
+model Session {
+  token     String   @id
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    Int
+  createdAt DateTime @default(now())
+  lastSeen  DateTime @default(now())
 }
 
 /// Пользовательский пресет коммутации (кнопки Preset 1..4 на рис.1)

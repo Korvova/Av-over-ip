@@ -4,6 +4,7 @@ const prisma = require('../db');
 const driver = require('../drivers');
 const { broadcast } = require('../ws');
 const { requireAuth } = require('../auth');
+const { withFreshIp } = require('../devicesync');
 
 const router = express.Router();
 
@@ -29,7 +30,7 @@ router.post('/', requireAuth, async (req, res) => {
   }
 
   try {
-    await driver.route(signal, encoder, decoder);
+    await withFreshIp(decoder, (dec) => driver.route(signal, encoder, dec));
   } catch (e) {
     return res.status(502).json({ error: String(e.message || e) });
   }
@@ -41,7 +42,7 @@ router.post('/', requireAuth, async (req, res) => {
       include: { decoder: true },
     });
     for (const r of others) {
-      try { await driver.route('usb', null, r.decoder); }
+      try { await withFreshIp(r.decoder, (dec) => driver.route('usb', null, dec)); }
       catch (e) { console.warn('usb unroute:', e.message); }
     }
     await prisma.route.deleteMany({
@@ -70,7 +71,7 @@ router.post('/all-decoders', requireAuth, async (req, res) => {
   const decoders = await prisma.device.findMany({ where: { type: 'DECODER', inSystem: true } });
   for (const decoder of decoders) {
     try {
-      await driver.route(signal, encoder, decoder);
+      await withFreshIp(decoder, (dec) => driver.route(signal, encoder, dec));
       await prisma.route.upsert({
         where: { signal_decoderId: { signal, decoderId: decoder.id } },
         update: { encoderId: encoder.id, follow: false },

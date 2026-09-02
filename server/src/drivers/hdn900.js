@@ -177,6 +177,15 @@ const DEFAULT_PARAMS = {
   multicast_on: 'n',
 };
 
+/**
+ * Значение параметра из телнет-вывода. Устройство печатает его БЕЗ перевода строки,
+ * и сразу следом идёт приглашение «/ # » — отрезаем его, иначе «y» читается как «y/ #».
+ */
+function paramValue(text) {
+  const line = String(text || '').split(/\r?\n/).map((l) => l.trim()).find(Boolean) || '';
+  return line.replace(/\s*\/\s*#.*$/, '').trim();
+}
+
 /** Разбор JSON-вывода node_query из телнет-дампа */
 function parseNodeQuery(raw) {
   const start = raw.indexOf('{');
@@ -198,60 +207,79 @@ module.exports = {
   name: 'hdn900',
 
   /**
-   * Поиск устройств.
-   * seedIps — известные IP (из БД): телнетимся к первому живому и запускаем
-   * node_query --dump --json, который опрашивает ВСЮ сеть.
-   * Без seed — mDNS-поиск хостов ast* (устройства анонсируют HTTP по mDNS).
+   * Поиск устройств. Результат — объединение двух источников по MAC:
+   *  • node_query --dump --json на любом живом устройстве (seed из БД, соседи по ARP);
+   *  • arp-scan подсети видео-порта — устройства, которых node_query не видит
+   *    (на объекте из 8 устройств он показывал 5), опрашиваются по одному.
+   * После перезагрузки устройства в автоматическом режиме получают ДРУГИЕ адреса,
+   * поэтому поиск всегда идёт до конца, а не до первого ответа.
    */
   async discover(seedIps = []) {
-    // Достаточно достучаться до ОДНОГО устройства: node_query на нём вернёт всю сеть.
-    for (const ip of seedIps) {
+    const byMac = new Map();
+    const queried = new Set();
+    const add = (list) => {
+      for (const d of list) if (d.mac && !byMac.has(d.mac)) byMac.set(d.mac, d);
+    };
+    const knownIp = (ip) => [...byMac.values()].some((d) => d.ip === ip);
+    // node_query на устройстве: вернёт всё, что оно видит в сети
+    const query = async (ip) => {
+      if (queried.has(ip)) return false;
+      queried.add(ip);
       try {
-        const out = await telnetExec(ip, 'node_query --dump --json');
-        return parseNodeQuery(out);
-      } catch { /* пробуем следующий seed */ }
+        add(parseNodeQuery(await telnetExec(ip, 'node_query --dump --json')));
+        return true;
+      } catch { return false; }
+    };
+    // одиночное устройство — если node_query на нём не отработал
+    const single = async (ip) => {
+      try { add(await module.exports.probeByIp(ip)); } catch { /* не устройство */ }
+    };
+
+    for (const ip of seedIps) {
+      if (await query(ip)) break;
     }
-    // Соседи по L2: мгновенно, устройства оседают в таблице ARP/neighbour от своего трафика.
+    // Соседи по L2: мгновенно, устройства оседают в таблице ARP от своего трафика.
     // Сначала быстрая проверка порта — иначе каждый посторонний сосед (роутер, принтер)
     // съедал бы полный таймаут Telnet.
-    const neighbours = await neighbourCandidates();
-    const alive = (await Promise.all(
-      neighbours.map(async (ip) => ((await probeTelnet(ip)) ? ip : null)),
-    )).filter(Boolean);
-    for (const ip of alive) {
-      try {
-        const out = await telnetExec(ip, 'node_query --dump --json');
-        return parseNodeQuery(out);
-      } catch { /* следующий */ }
-    }
-    // Обход подсети видео-порта: устройства ASPEED молчат в эфир, поэтому ни mDNS,
-    // ни таблица соседей их не показывают — но на ARP и Telnet они отвечают.
-    // Достаточно найти одно, дальше node_query отдаст всю сеть.
-    for (const iface of localNetworks()) {
-      const neighbours2 = await arpScan(iface.name);
-      for (const ip of neighbours2) {
-        if (!(await probeTelnet(ip))) continue;
-        try {
-          const out = await telnetExec(ip, 'node_query --dump --json');
-          return parseNodeQuery(out);
-        } catch { /* следующий сосед */ }
+    if (!byMac.size) {
+      const neighbours = await neighbourCandidates();
+      const alive = (await Promise.all(
+        neighbours.map(async (ip) => ((await probeTelnet(ip)) ? ip : null)),
+      )).filter(Boolean);
+      for (const ip of alive) {
+        if (await query(ip)) break;
       }
     }
+    // Обход подсети видео-порта через arp-scan — всегда, даже если node_query что-то дал:
+    // устройства ASPEED молчат в эфир, и часть из них node_query может не показать.
+    for (const iface of localNetworks()) {
+      const hits = await arpScan(iface.name);
+      const fresh = hits.filter((ip) => !knownIp(ip));
+      const alive = (await Promise.all(
+        fresh.map(async (ip) => ((await probeTelnet(ip)) ? ip : null)),
+      )).filter(Boolean);
+      for (const ip of alive) {
+        if (knownIp(ip)) continue;
+        await query(ip);
+        if (!knownIp(ip)) await single(ip);
+      }
+    }
+    if (byMac.size) return [...byMac.values()];
+
     // Если arp-scan недоступен — перебираем подсеть подключениями (медленнее и на сети /16
     // может упереться в предел таблицы соседей ядра, поэтому только как запасной путь)
     const scanned = await scanForDevice();
     if (scanned) {
-      const out = await telnetExec(scanned, 'node_query --dump --json');
-      return parseNodeQuery(out);
+      await query(scanned);
+      if (!knownIp(scanned)) await single(scanned);
+      if (byMac.size) return [...byMac.values()];
     }
     // mDNS — в последнюю очередь: оборудование других производителей себя анонсирует,
     // но ждать ответов дольше, чем просканировать подсеть
     for (const ifaceIp of localIPv4()) {
       for (const ip of await mdnsFindAstDevices(2000, ifaceIp)) {
-        try {
-          const out = await telnetExec(ip, 'node_query --dump --json');
-          return parseNodeQuery(out);
-        } catch { /* следующий */ }
+        await query(ip);
+        if (byMac.size) return [...byMac.values()];
       }
     }
     throw new Error(
@@ -347,7 +375,7 @@ module.exports = {
     for (const key of keys) {
       // значение — первая непустая строка после метки, «not defined» считаем отсутствием
       const m = out.match(new RegExp(`<<${key}\\s*\\r?\\n([^\\r\\n]*)`));
-      let v = m ? m[1].trim() : '';
+      let v = m ? paramValue(m[1]) : '';
       if (!v || /not defined/i.test(v) || v.startsWith('echo ') || v.startsWith('astparam')) v = '';
       // «не определено» значит, что действует заводское значение — подставляем его,
       // иначе поля в интерфейсе остаются пустыми, хотя устройство работает
@@ -593,7 +621,7 @@ function* subnetHosts(address, prefix) {
  */
 function arpScan(iface, timeoutMs = 40000) {
   const { execFile } = require('child_process');
-  const args = ['-I', iface, '--localnet', '--bandwidth=8M', '--retry=1'];
+  const args = ['-I', iface, '--localnet', '--bandwidth=8M', '--retry=2'];
   const run = (cmd, cmdArgs) =>
     new Promise((resolve) => {
       execFile(cmd, cmdArgs, { timeout: timeoutMs, windowsHide: true, maxBuffer: 4 << 20 },
@@ -614,7 +642,7 @@ function arpScan(iface, timeoutMs = 40000) {
 }
 
 /** Отвечает ли адрес на Telnet-порт устройства */
-function probeTelnet(ip, timeoutMs = 400) {
+function probeTelnet(ip, timeoutMs = 700) {
   return new Promise((resolve) => {
     const socket = new net.Socket();
     let done = false;

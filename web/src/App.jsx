@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { IconUi, IconRouting, IconDevices, IconWall, IconUsers, IconSettings, IconHelp } from './icons.jsx';
-import { setToken } from './api.js';
+import { api, getToken, setToken } from './api.js';
 import Login from './Login.jsx';
 import Wizard from './Wizard.jsx';
 import DevicesPage from './DevicesPage.jsx';
@@ -26,6 +26,16 @@ export default function App() {
   const [auth, setAuth] = useState(null); // { user, firstRun }
   const [wizardStep, setWizardStep] = useState(null); // 'password' | 'welcome' | null
   const [page, setPage] = useState('ui');
+  const [restoring, setRestoring] = useState(!!getToken()); // сессия из прошлого визита
+
+  // токен сохранён в браузере — спрашиваем сервер, кто это, вместо повторного входа
+  useEffect(() => {
+    if (!getToken()) return;
+    api('/api/auth/me')
+      .then(onLogin)
+      .catch(() => setToken(''))
+      .finally(() => setRestoring(false));
+  }, []);
 
   function onLogin(data) {
     setAuth(data);
@@ -40,6 +50,7 @@ export default function App() {
     setPage('ui');
   }
 
+  if (restoring) return null;
   if (!auth) return <Login onLogin={onLogin} />;
 
   const pages = PAGES.filter((p) => p.roles.includes(auth.user.role));

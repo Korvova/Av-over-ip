@@ -1,10 +1,11 @@
 // Обёртка над fetch: токен, JSON, ошибки на русском
-let token = sessionStorage.getItem('token') || '';
+// localStorage: вход переживает перезагрузку страницы и закрытие вкладки
+let token = localStorage.getItem('token') || '';
 
 export function setToken(t) {
   token = t || '';
-  if (t) sessionStorage.setItem('token', t);
-  else sessionStorage.removeItem('token');
+  if (t) localStorage.setItem('token', t);
+  else localStorage.removeItem('token');
 }
 
 export function getToken() {

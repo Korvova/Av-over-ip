@@ -61,7 +61,7 @@ router.delete('/:id', requireAdmin, async (req, res) => {
   if (wall) {
     for (const panel of wall.panels) {
       if (!panel.decoder) continue;
-      try { await driver.wallDisable(panel.decoder); }
+      try { await withFreshIp(panel.decoder, (dec) => driver.wallDisable(dec)); }
       catch (e) { console.warn('wallDisable при удалении стены:', e.message); }
     }
   }
@@ -102,14 +102,14 @@ async function applySourceToWall(wallDbId, encoderId) {
   for (const panel of wall.panels) {
     if (!panel.decoder) continue;
     try {
-      await driver.route('video', encoder, panel.decoder);
-      await driver.wallApply(panel.decoder, {
+      await withFreshIp(panel.decoder, (dec) => driver.route('video', encoder, dec));
+      await withFreshIp(panel.decoder, (dec) => driver.wallApply(dec, {
         rows: wall.rows,
         cols: wall.cols,
         row: panel.row,
         col: panel.col,
         bezel: wall.bezel,
-      });
+      }));
       await prisma.route.upsert({
         where: { signal_decoderId: { signal: 'video', decoderId: panel.decoder.id } },
         update: { encoderId: encoder.id, follow: false },
@@ -146,8 +146,8 @@ router.post('/:id/panel-source', requireAuth, async (req, res) => {
 
   try {
     // панель выходит из режима «кусок стены»: полный кадр нового источника или пусто
-    await driver.wallDisable(panel.decoder);
-    await driver.route('video', encoder, panel.decoder);
+    await withFreshIp(panel.decoder, (dec) => driver.wallDisable(dec));
+    await withFreshIp(panel.decoder, (dec) => driver.route('video', encoder, dec));
   } catch (e) {
     return res.status(502).json({ error: String(e.message || e) });
   }
@@ -222,7 +222,7 @@ router.post('/:id/disable', requireAdmin, async (req, res) => {
   if (!wall) return res.status(404).json({ error: 'Видеостена не найдена' });
   for (const panel of wall.panels) {
     if (!panel.decoder) continue;
-    try { await driver.wallDisable(panel.decoder); }
+    try { await withFreshIp(panel.decoder, (dec) => driver.wallDisable(dec)); }
     catch (e) { console.warn('wallDisable:', e.message); }
   }
   res.json({ ok: true });

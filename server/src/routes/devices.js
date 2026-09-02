@@ -4,6 +4,7 @@ const prisma = require('../db');
 const driver = require('../drivers');
 const { broadcast } = require('../ws');
 const { requireAuth, requireAdmin } = require('../auth');
+const { saveFound, refreshIps, withFreshIp } = require('../devicesync');
 
 const router = express.Router();
 
@@ -15,38 +16,6 @@ router.get('/', requireAuth, async (_req, res) => {
   });
   res.json(devices);
 });
-
-/** Занести найденные устройства в БД: автоназначение ID и имён TX-NNN / RX-NNN (ТЗ) */
-async function saveFound(found) {
-  let added = 0;
-  for (const d of found) {
-    const exists = await prisma.device.findUnique({ where: { mac: d.mac } });
-    if (exists) {
-      // устройство знакомо, но могло сменить адрес — обновляем
-      if (exists.ip !== d.ip) {
-        await prisma.device.update({ where: { id: exists.id }, data: { ip: d.ip, online: true } });
-      }
-      continue;
-    }
-    const count = await prisma.device.count({ where: { type: d.type } });
-    const num = count + 1;
-    await prisma.device.create({
-      data: {
-        type: d.type,
-        deviceId: num,
-        name: (d.type === 'ENCODER' ? 'TX' : 'RX') + num,
-        mac: d.mac,
-        ip: d.ip,
-        firmware: d.firmware || null,
-        online: true,
-        inSystem: false,
-      },
-    });
-    added++;
-  }
-  broadcast('devices', await prisma.device.findMany());
-  return added;
-}
 
 // POST /api/devices/discover — «Поиск новых устройств»
 router.post('/discover', requireAdmin, async (_req, res) => {
@@ -101,12 +70,14 @@ router.get('/multicast', requireAdmin, async (_req, res) => {
   const items = [];
   for (const d of devices) {
     let on = null; // null — устройство не ответило
-    try { on = await driver.getMulticast(d); } catch { /* недоступно */ }
+    // после перезагрузки адрес мог смениться — withFreshIp переищет устройство по MAC
+    try { on = await withFreshIp(d, (dev) => driver.getMulticast(dev)); } catch { /* недоступно */ }
     items.push({ id: d.id, name: d.name, ip: d.ip, multicast: on });
   }
   res.json({
     total: items.length,
     off: items.filter((i) => i.multicast === false).length,
+    unreachable: items.filter((i) => i.multicast === null).length,
     items,
   });
 });
@@ -119,11 +90,18 @@ router.post('/multicast', requireAdmin, async (_req, res) => {
   let changed = 0;
   for (const d of devices) {
     try {
-      if (await driver.getMulticast(d)) continue; // уже включён
-      await driver.enableMulticast(d);
+      if (await withFreshIp(d, (dev) => driver.getMulticast(dev))) continue; // уже включён
+      const cur = await prisma.device.findUnique({ where: { id: d.id } }); // адрес мог обновиться
+      await driver.enableMulticast(cur);
       changed++;
     } catch (e) {
       errors.push(`${d.name}: ${e.message || e}`);
+    }
+  }
+  // устройства перезагружаются и обычно поднимаются с новыми адресами — переищем их
+  if (changed) {
+    for (const delay of [45000, 90000]) {
+      setTimeout(() => refreshIps().catch((e) => console.warn('refreshIps:', e.message)), delay);
     }
   }
   res.json({ changed, total: devices.length, errors });
