@@ -12,6 +12,23 @@ async function getDevice(req, res) {
   return device;
 }
 
+// GET /api/control/:id/params — прочитать текущие настройки прямо с устройства
+// и запомнить их: интерфейс показывает реальное состояние, а не пустые поля
+router.get('/:id/params', requireAdmin, async (req, res) => {
+  const device = await getDevice(req, res);
+  if (!device) return;
+  try {
+    const live = await driver.readParams(device);
+    await prisma.device.update({
+      where: { id: device.id },
+      data: { settings: { ...device.settings, ...live.settings } },
+    });
+    res.json(live);
+  } catch (e) {
+    res.status(502).json({ error: 'Не удалось прочитать настройки: ' + String(e.message || e) });
+  }
+});
+
 // POST /api/control/:id/param { key, value } — применить параметр (LED, EDID, IO, реле...)
 router.post('/:id/param', requireAdmin, async (req, res) => {
   const device = await getDevice(req, res);

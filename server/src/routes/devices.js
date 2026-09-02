@@ -93,6 +93,42 @@ router.post('/add-all', requireAdmin, async (_req, res) => {
   res.json({ ok: true });
 });
 
+// GET /api/devices/multicast — в каком режиме вещания устройства системы.
+// Без многоадресного режима энкодер отдаёт поток лишь ОДНОМУ декодеру: на стене
+// картинку видит только один экран, остальные перехватывают её друг у друга.
+router.get('/multicast', requireAdmin, async (_req, res) => {
+  const devices = await prisma.device.findMany({ where: { inSystem: true } });
+  const items = [];
+  for (const d of devices) {
+    let on = null; // null — устройство не ответило
+    try { on = await driver.getMulticast(d); } catch { /* недоступно */ }
+    items.push({ id: d.id, name: d.name, ip: d.ip, multicast: on });
+  }
+  res.json({
+    total: items.length,
+    off: items.filter((i) => i.multicast === false).length,
+    items,
+  });
+});
+
+// POST /api/devices/multicast — включить многоадресный режим на всех устройствах.
+// Устройства при этом перезагружаются — иначе режим не применяется.
+router.post('/multicast', requireAdmin, async (_req, res) => {
+  const devices = await prisma.device.findMany({ where: { inSystem: true } });
+  const errors = [];
+  let changed = 0;
+  for (const d of devices) {
+    try {
+      if (await driver.getMulticast(d)) continue; // уже включён
+      await driver.enableMulticast(d);
+      changed++;
+    } catch (e) {
+      errors.push(`${d.name}: ${e.message || e}`);
+    }
+  }
+  res.json({ changed, total: devices.length, errors });
+});
+
 // POST /api/devices/:id/add — добавить одно устройство в систему (галка)
 router.post('/:id/add', requireAdmin, async (req, res) => {
   const device = await prisma.device.update({

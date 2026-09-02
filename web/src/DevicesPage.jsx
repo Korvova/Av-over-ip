@@ -24,6 +24,7 @@ export default function DevicesPage({ isAdmin, onOpenWizard }) {
   const [error, setError] = useState('');
   const [manualIp, setManualIp] = useState(''); // ручное добавление по IP
   const [searching, setSearching] = useState(false); // идёт поиск устройств по сети
+  const [mcast, setMcast] = useState(null);          // режим вещания устройств
 
   async function load() {
     try {
@@ -34,7 +35,22 @@ export default function DevicesPage({ isAdmin, onOpenWizard }) {
       setError(e.message);
     }
   }
-  useEffect(() => { load(); }, []);
+
+  const enableMulticast = () => {
+    if (!window.confirm('Включить многоадресный режим на всех устройствах? Без него один источник можно вывести только на один экран. Устройства перезагрузятся, это займёт около минуты.')) return;
+    return run(async () => {
+      const r = await api('/api/devices/multicast', { method: 'POST' });
+      if (r.errors && r.errors.length) setError(r.errors.join('; '));
+      setMcast(null);
+      setTimeout(loadMulticast, 60000); // после перезагрузки устройств
+    });
+  };
+  // проверяем режим вещания: без многоадресного один энкодер обслуживает лишь один экран
+  async function loadMulticast() {
+    if (!isAdmin) return;
+    try { setMcast(await api('/api/devices/multicast')); } catch { /* не критично */ }
+  }
+  useEffect(() => { load().then(loadMulticast); }, []);
   useWs((type) => {
     if (type === 'devices' || type === 'routing') load();
   });
@@ -94,6 +110,20 @@ export default function DevicesPage({ isAdmin, onOpenWizard }) {
       </div>
 
       {error && <div className="form-error">{error}</div>}
+
+      {mcast && mcast.off > 0 && (
+        <div className="help-note">
+          <b>Один источник выводится только на один экран.</b> На {mcast.off} из {mcast.total} устройств
+          выключен многоадресный режим — в нём энкодер отдаёт поток одному декодеру, и экраны
+          перехватывают картинку друг у друга. Для работы «на все декодеры» и видеостен режим нужно включить.
+          <div style={{ marginTop: 8 }}>
+            <button className="btn btn-primary btn-small" disabled={busy} onClick={enableMulticast}>
+              Включить многоадресный режим
+            </button>
+            <span className="hint"> — устройства перезагрузятся, около минуты</span>
+          </div>
+        </div>
+      )}
 
       <h3 className="tbl-title">В системе коммутации</h3>
       <div className="tbl-wrap">

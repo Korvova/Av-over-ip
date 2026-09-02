@@ -14,6 +14,7 @@ const fleet = [
 ];
 
 const bootTime = Date.now();
+let multicastOn = false; // эмуляция общего режима вещания
 const log = (...a) => console.log('[mock-driver]', ...a);
 
 module.exports = {
@@ -54,8 +55,29 @@ module.exports = {
     return { ok: true, channel: ch };
   },
 
+  /** Текущие настройки «устройства» — эмулятор отдаёт правдоподобный набор */
+  async readParams(device) {
+    return {
+      settings: {
+        led: 'on', edid: '4K60444PCM20SDR', irMode: '12v', fcMode: 'copper',
+        ioLevel: '12v', io1mode: 'out', io1level: 'low', io2mode: 'out', io2level: 'low',
+        scaling: 'bypass', audioInput: 'hdmi', hdcp: 'hdcp_snk',
+        rs232Relay: true, baudRate: 115200, dataBits: 8, parity: 'none', stopBits: 1,
+      },
+      network: { dhcp: false, ip: device.ip, netmask: '255.255.0.0', gateway: '' },
+      multicast: multicastOn,
+      raw: {},
+    };
+  },
+
+  /** Многоадресный режим включён? */
+  async getMulticast() {
+    return multicastOn;
+  },
+
   /** Multicast-режим (для один-ко-многим) */
   async enableMulticast(device) {
+    multicastOn = true;
     log(`enableMulticast ${device.ip}`);
     return { ok: true, reboot: true };
   },

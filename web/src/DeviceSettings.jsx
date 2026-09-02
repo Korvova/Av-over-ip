@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { api } from './api.js';
 import { encoderSections, decoderSections } from './deviceSchema.js';
 
@@ -20,7 +20,27 @@ export default function DeviceSettings({ device, encoders, onClose, onChanged })
 
   const isEncoder = device.type === 'ENCODER';
   const sections = isEncoder ? encoderSections(encoders) : decoderSections(encoders);
-  const settings = device.settings || {};
+  const [settings, setSettings] = useState(device.settings || {});
+  const [reading, setReading] = useState(true);
+
+  // читаем настройки прямо с устройства, чтобы в полях были реальные значения
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setReading(true);
+      try {
+        const live = await api(`/api/control/${device.id}/params`);
+        if (cancelled) return;
+        setSettings((prev) => ({ ...prev, ...live.settings }));
+        if (live.network) setNet((prev) => ({ ...prev, ...live.network }));
+      } catch (e) {
+        if (!cancelled) setError('Не удалось прочитать настройки с устройства: ' + e.message);
+      } finally {
+        if (!cancelled) setReading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [device.id]);
 
   async function attempt(fn, okMsg) {
     setError('');
@@ -48,7 +68,8 @@ export default function DeviceSettings({ device, encoders, onClose, onChanged })
       ? field.options.find((o) => String(o.v) === String(raw))?.v
       : raw;
 
-    // всегда фиксируем выбор в settings
+    // всегда фиксируем выбор в settings — и локально, чтобы поле сразу показало выбранное
+    setSettings((prev) => ({ ...prev, [field.key]: value }));
     const patchSettings = () =>
       api(`/api/devices/${device.id}`, {
         method: 'PATCH',
@@ -85,6 +106,25 @@ export default function DeviceSettings({ device, encoders, onClose, onChanged })
           },
         });
       }, 'Команда отправлена');
+    }
+    if (field.apply === 'serial') {
+      const s2 = { ...settings, [field.key]: value };
+      return attempt(async () => {
+        await patchSettings();
+        await api(`/api/control/${device.id}/param`, {
+          method: 'POST',
+          body: {
+            key: 'serial',
+            value: {
+              baudRate: s2.baudRate || 115200,
+              dataBits: s2.dataBits || 8,
+              parity: s2.parity || 'none',
+              stopBits: s2.stopBits || 1,
+              enabled: s2.rs232Relay !== false,
+            },
+          },
+        });
+      }, 'Параметры RS-232 сохранены (применятся после перезагрузки устройства)');
     }
     if (field.apply === 'routing') {
       return attempt(async () => {
@@ -124,6 +164,8 @@ export default function DeviceSettings({ device, encoders, onClose, onChanged })
           <h2>{isEncoder ? 'Энкодер' : 'Декодер'}: {device.name}</h2>
           <button className="btn btn-small" onClick={onClose}>Закрыть</button>
         </div>
+
+        {reading && <div className="hint">Читаем настройки с устройства…</div>}
 
         {error && <div className="form-error">{error}</div>}
         {notice && <div className="form-ok">{notice}</div>}

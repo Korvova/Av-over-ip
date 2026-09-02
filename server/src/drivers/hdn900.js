@@ -126,7 +126,37 @@ const PARAM_COMMANDS = {
   videoOutput: (v) => [`echo ${v.off ? 1 : 0} > /sys/devices/platform/display/screen_off`],
   // Пауза/чёрный экран декодера: 0=играть, 1=пауза, 2=чёрный
   pause: (v) => [`echo ${v} > /sys/devices/platform/videoip/pause`],
+  // Параметры RS-232 одной строкой: «115200-8n1» = скорость-биты·чётность·стоп-биты
+  // (документация «How to Use Serial over IP»); требует перезагрузки устройства
+  serial: (v) => {
+    const parity = { none: 'n', even: 'e', odd: 'o' }[v.parity] || 'n';
+    return [
+      `astparam s s0_baudrate ${v.baudRate || 115200}-${v.dataBits || 8}${parity}${v.stopBits || 1}`,
+      `astparam s no_soip ${v.enabled === false ? 'y' : 'n'}`,
+      'astparam save',
+    ];
+  },
 };
+
+
+// Устройство хранит EDID и разрешение номерами, интерфейс — именами.
+// Порядок строго как в документации ASPEED (00..23 и 00..13).
+const EDID_BY_INDEX = [
+  '1080PPCM20SDR', '1080PDTS51SDR', '1080PHD71SDR',
+  '1080IPCM20SDR', '1080IDTS51SDR', '1080IHD71SDR',
+  '3DPCM20SDR', '3DDTS51SDR', '3DHD71SDR',
+  '4K30444PCM20SDR', '4K30444DTS51SDR', '4K30444HD71SDR',
+  '4K60420PCM20SDR', '4K60420DTS51SDR', '4K60420HD71SDR',
+  '4K60444PCM20SDR', '4K60444DTS51SDR', '4K60444HD71SDR',
+  '4K60444PCM20HDR', '4K60444DTS51HDR', '4K60444HD71HDR',
+  'DVI1280X1024', 'DVI1920X1080', 'DVI1920X1200',
+].reduce((m, name, i) => { m[String(i).padStart(2, '0')] = name; m[String(i)] = name; return m; }, {});
+
+const SCALING_BY_INDEX = [
+  'bypass', '1080P50', '1080P60', '720P50', '720P60',
+  '2160P24', '2160P30', '2160P50', '2160P60',
+  '1280x1024', '1360x768', '1440x900', '1680x1050', '1920x1200',
+].reduce((m, name, i) => { m[String(i).padStart(2, '0')] = name; m[String(i)] = name; return m; }, {});
 
 /** Разбор JSON-вывода node_query из телнет-дампа */
 function parseNodeQuery(raw) {
@@ -277,7 +307,79 @@ module.exports = {
     return { ok: true, channel: ch };
   },
 
-  /** Включить multicast-режим (нужен для «один энкодер -> много декодеров»). Перезагружает устройство! */
+  /**
+   * Прочитать текущие настройки устройства — чтобы в интерфейсе были видны реальные
+   * значения, а не пустые поля. Все параметры читаются одним сеансом Telnet:
+   * перед каждым значением печатаем метку, по ней и разбираем ответ.
+   */
+  async readParams(device) {
+    const keys = [
+      'multicast_on', 'edid', 'irmode', 'fcmode', 'iolevel',
+      'io1mode', 'io2mode', 'io1status', 'io2status',
+      'relay1status', 'relay2status', 'led_on', 'led_timer',
+      'resolution', 'a_io_select', 'hdmiouthdcp',
+      'no_soip', 's0_baudrate', 'ip_mode', 'ipaddr', 'netmask', 'gatewayip',
+    ];
+    const cmds = keys.map((k) => `echo "<<${k}"; astparam g ${k}`);
+    const out = await telnetExec(device.ip, cmds);
+
+    const raw = {};
+    for (const key of keys) {
+      // значение — первая непустая строка после метки, «not defined» считаем отсутствием
+      const m = out.match(new RegExp(`<<${key}\\s*\\r?\\n([^\\r\\n]*)`));
+      let v = m ? m[1].trim() : '';
+      if (!v || /not defined/i.test(v) || v.startsWith('echo ') || v.startsWith('astparam')) v = '';
+      raw[key] = v;
+    }
+
+    // приводим к значениям, которыми оперирует интерфейс
+    const s = {};
+    if (raw.led_on) s.led = raw.led_on === 'n' ? 'off' : (raw.led_timer && raw.led_timer !== 't0' ? 'on60' : 'on');
+    if (raw.edid) s.edid = EDID_BY_INDEX[raw.edid] || raw.edid;
+    if (raw.irmode) s.irMode = raw.irmode;
+    if (raw.fcmode) s.fcMode = raw.fcmode;
+    if (raw.iolevel) s.ioLevel = raw.iolevel;
+    if (raw.io1mode) s.io1mode = raw.io1mode;
+    if (raw.io2mode) s.io2mode = raw.io2mode;
+    if (raw.io1status) s.io1level = raw.io1status === 'y' ? 'high' : 'low';
+    if (raw.io2status) s.io2level = raw.io2status === 'y' ? 'high' : 'low';
+    if (raw.resolution) s.scaling = SCALING_BY_INDEX[raw.resolution] || raw.resolution;
+    if (raw.a_io_select) s.audioInput = raw.a_io_select;
+    if (raw.hdmiouthdcp) s.hdcp = raw.hdmiouthdcp;
+    if (raw.no_soip) s.rs232Relay = raw.no_soip === 'n';
+    // строка вида «115200-8n1»: скорость, биты данных, чётность, стоповые биты
+    const b = (raw.s0_baudrate || '').match(/^(\d+)-([5-8])([neo])([12])$/i);
+    if (b) {
+      s.baudRate = Number(b[1]);
+      s.dataBits = Number(b[2]);
+      s.parity = { n: 'none', e: 'even', o: 'odd' }[b[3].toLowerCase()];
+      s.stopBits = Number(b[4]);
+    }
+    return {
+      settings: s,
+      network: {
+        dhcp: raw.ip_mode === 'dhcp',
+        ip: raw.ipaddr || device.ip,
+        netmask: raw.netmask || '255.255.0.0',
+        gateway: raw.gatewayip || '',
+      },
+      multicast: raw.multicast_on === 'y',
+      raw,
+    };
+  },
+
+  /**
+   * Многоадресный режим включён?
+   * Без него энкодер отдаёт поток только ОДНОМУ декодеру: на стене картинку видит
+   * лишь один экран, а остальные перехватывают её друг у друга.
+   */
+  async getMulticast(device) {
+    const out = await telnetExec(device.ip, 'astparam g multicast_on');
+    if (/not defined/i.test(out)) return false;
+    return /(^|\n)\s*y\s*(\r?\n|$)/.test(out.replace(/astparam g multicast_on/g, ''));
+  },
+
+  /** Включить многоадресный режим (нужен для «один энкодер → много декодеров»). Перезагружает устройство! */
   async enableMulticast(device) {
     await telnetExec(device.ip, ['astparam s multicast_on y', 'astparam save', 'reboot -f']);
     return { ok: true, reboot: true };

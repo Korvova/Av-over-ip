@@ -60,14 +60,14 @@ const NETWORK_SECTION = { title: 'Сетевые настройки', network: t
 const RS232_SECTION = {
   title: 'Настройки RS-232',
   fields: [
-    { key: 'rs232Relay', label: 'Команды Relay RS-232', type: 'select', apply: 'store', options: onOff },
-    { key: 'parity', label: 'Parity (чётность)', type: 'select', apply: 'store',
+    { key: 'rs232Relay', label: 'Команды Relay RS-232', type: 'select', apply: 'serial', options: onOff },
+    { key: 'parity', label: 'Parity (чётность)', type: 'select', apply: 'serial',
       options: [{ v: 'none', l: 'None' }, { v: 'even', l: 'Even' }, { v: 'odd', l: 'Odd' }] },
-    { key: 'baudRate', label: 'Baud Rate', type: 'select', apply: 'store',
-      options: [2400, 4800, 9600, 19200, 38400, 57600, 115200].map((v) => ({ v, l: String(v) })) },
-    { key: 'dataBits', label: 'Data Bits', type: 'select', apply: 'store',
+    { key: 'baudRate', label: 'Baud Rate', type: 'select', apply: 'serial',
+      options: [300, 1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200].map((v) => ({ v, l: String(v) })) },
+    { key: 'dataBits', label: 'Data Bits', type: 'select', apply: 'serial',
       options: [5, 6, 7, 8].map((v) => ({ v, l: String(v) })) },
-    { key: 'stopBits', label: 'Stop Bits', type: 'select', apply: 'store',
+    { key: 'stopBits', label: 'Stop Bits', type: 'select', apply: 'serial',
       options: [1, 2].map((v) => ({ v, l: String(v) })) },
   ],
 };
