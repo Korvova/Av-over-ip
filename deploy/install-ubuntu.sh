@@ -30,6 +30,10 @@ sudo -u postgres psql -c "ALTER USER postgres PASSWORD '$DB_PASS';"
 # чтобы служба обходилась без sudo
 setcap cap_net_raw+ep "$(command -v arp-scan)" 2>/dev/null || true
 
+# git с HTTP/2 на некоторых сетях обрывает ответ GitHub («expected flush after ref listing»)
+# и требует логин на публичный репозиторий — принудительно HTTP/1.1
+sudo -u "$RUN_USER" git config --global http.version HTTP/1.1
+
 echo "== 3/6 Код приложения =="
 if [ ! -d "$APP_DIR/.git" ]; then
   git clone "$REPO_URL" "$APP_DIR"
