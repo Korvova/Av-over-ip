@@ -12,6 +12,7 @@ export default function DeviceSettings({ device, encoders, onClose, onChanged })
   const [name, setName] = useState(device.name);
   const [devId, setDevId] = useState(device.deviceId);
   const [net, setNet] = useState({
+    mode: device.dhcp ? 'dhcp' : 'static', // 'auto' подставится при чтении с устройства
     dhcp: device.dhcp,
     ip: device.ip,
     netmask: device.netmask || '255.255.0.0',
@@ -200,20 +201,28 @@ export default function DeviceSettings({ device, encoders, onClose, onChanged })
                 <label className="radio">
                   <input
                     type="radio"
-                    checked={!net.dhcp}
-                    onChange={() => setNet({ ...net, dhcp: false })}
+                    checked={net.mode === 'auto'}
+                    onChange={() => setNet({ ...net, mode: 'auto', dhcp: false })}
+                  />
+                  <span>Автоматический (169.254.x.x, без маршрутизатора)</span>
+                </label>
+                <label className="radio">
+                  <input
+                    type="radio"
+                    checked={net.mode === 'static'}
+                    onChange={() => setNet({ ...net, mode: 'static', dhcp: false })}
                   />
                   <span>Статический IP</span>
                 </label>
                 <label className="radio">
                   <input
                     type="radio"
-                    checked={net.dhcp}
-                    onChange={() => setNet({ ...net, dhcp: true })}
+                    checked={net.mode === 'dhcp'}
+                    onChange={() => setNet({ ...net, mode: 'dhcp', dhcp: true })}
                   />
                   <span>Динамический IP (DHCP)</span>
                 </label>
-                {!net.dhcp && (
+                {net.mode === 'static' && (
                   <>
                     <label>IP-адрес
                       <input value={net.ip} onChange={(e) => setNet({ ...net, ip: e.target.value })} />
@@ -229,7 +238,10 @@ export default function DeviceSettings({ device, encoders, onClose, onChanged })
                 <button
                   className="btn btn-primary"
                   onClick={() => attempt(async () => {
-                    await api(`/api/control/${device.id}/network`, { method: 'POST', body: net });
+                    await api(`/api/control/${device.id}/network`, {
+                      method: 'POST',
+                      body: { ...net, dhcp: net.mode === 'dhcp', autoip: net.mode === 'auto' },
+                    });
                   }, 'Сетевые настройки отправлены (устройство перезагрузится)')}
                 >
                   Применить сеть
