@@ -158,6 +158,25 @@ const SCALING_BY_INDEX = [
   '1280x1024', '1360x768', '1440x900', '1680x1050', '1920x1200',
 ].reduce((m, name, i) => { m[String(i).padStart(2, '0')] = name; m[String(i)] = name; return m; }, {});
 
+// Заводские значения параметров: устройство хранит только то, что меняли,
+// на остальное «astparam g» отвечает «not defined». Значения — из документации ASPEED.
+const DEFAULT_PARAMS = {
+  irmode: '12v',            // ИК-порт: 12 В
+  fcmode: 'copper',         // сетевой порт: медь
+  iolevel: '12v',           // порты Digital IO: 12 В
+  io1mode: 'out', io2mode: 'out',
+  io1status: 'n', io2status: 'n',   // низкий уровень
+  relay1status: 'n', relay2status: 'n',
+  edid: '15',               // 4K60444PCM20SDR
+  resolution: '00',         // Bypass
+  hdmiouthdcp: 'hdcp_snk',  // как у дисплея
+  a_io_select: 'hdmi',
+  no_soip: 'n',             // пересылка RS-232 включена
+  s0_baudrate: '115200-8n1',
+  led_on: 'y', led_timer: 't0',
+  multicast_on: 'n',
+};
+
 /** Разбор JSON-вывода node_query из телнет-дампа */
 function parseNodeQuery(raw) {
   const start = raw.indexOf('{');
@@ -322,6 +341,7 @@ module.exports = {
     ];
     const cmds = keys.map((k) => `echo "<<${k}"; astparam g ${k}`);
     const out = await telnetExec(device.ip, cmds);
+    const defaults = []; // параметры, которые устройство не хранит — действует заводское значение
 
     const raw = {};
     for (const key of keys) {
@@ -358,12 +378,15 @@ module.exports = {
     return {
       settings: s,
       network: {
+        // автоматический режим (169.254.x.x) — заводской у этих устройств
+        mode: raw.ip_mode === 'dhcp' ? 'dhcp' : (raw.ip_mode === 'static' ? 'static' : 'auto'),
         dhcp: raw.ip_mode === 'dhcp',
         ip: raw.ipaddr || device.ip,
         netmask: raw.netmask || '255.255.0.0',
         gateway: raw.gatewayip || '',
       },
       multicast: raw.multicast_on === 'y',
+      defaults, // что показано заводским значением, а не считано
       raw,
     };
   },
