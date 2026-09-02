@@ -349,7 +349,10 @@ module.exports = {
       const m = out.match(new RegExp(`<<${key}\\s*\\r?\\n([^\\r\\n]*)`));
       let v = m ? m[1].trim() : '';
       if (!v || /not defined/i.test(v) || v.startsWith('echo ') || v.startsWith('astparam')) v = '';
-      raw[key] = v;
+      // «не определено» значит, что действует заводское значение — подставляем его,
+      // иначе поля в интерфейсе остаются пустыми, хотя устройство работает
+      raw[key] = v || DEFAULT_PARAMS[key] || '';
+      if (!v) defaults.push(key);
     }
 
     // приводим к значениям, которыми оперирует интерфейс
