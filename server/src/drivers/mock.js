@@ -71,6 +71,9 @@ module.exports = {
   },
 
   /** Многоадресный режим включён? */
+  /** Эмулятор всегда на связи */
+  async probe() { return true; },
+
   async getMulticast() {
     return multicastOn;
   },

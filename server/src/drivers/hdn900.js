@@ -429,8 +429,14 @@ module.exports = {
    */
   async getMulticast(device) {
     const out = await telnetExec(device.ip, 'astparam g multicast_on');
-    if (/not defined/i.test(out)) return false;
-    return /(^|\n)\s*y\s*(\r?\n|$)/.test(out.replace(/astparam g multicast_on/g, ''));
+    const v = paramValue(out.split('astparam g multicast_on').pop());
+    if (!v || /not defined/i.test(v)) return false;
+    return v.toLowerCase() === 'y';
+  },
+
+  /** Отвечает ли устройство по своему адресу (быстрая проверка порта Telnet) */
+  probe(device) {
+    return probeTelnet(device.ip, 1500);
   },
 
   /** Включить многоадресный режим (нужен для «один энкодер → много декодеров»). Перезагружает устройство! */

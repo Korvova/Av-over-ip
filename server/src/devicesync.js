@@ -73,4 +73,17 @@ async function withFreshIp(device, fn) {
   }
 }
 
-module.exports = { saveFound, refreshIps, withFreshIp };
+/**
+ * Список устройств с актуальными адресами: быстро проверяем все параллельно,
+ * и если хоть одно молчит — один общий перепоиск, а не по три секунды на каждое.
+ */
+async function freshDevices(where = {}) {
+  let devices = await prisma.device.findMany({ where });
+  const alive = await Promise.all(devices.map((d) => driver.probe(d).catch(() => false)));
+  if (alive.every(Boolean)) return devices;
+  try { await refreshIps(); } catch (e) { console.warn('refreshIps:', e.message); }
+  devices = await prisma.device.findMany({ where });
+  return devices;
+}
+
+module.exports = { saveFound, refreshIps, withFreshIp, freshDevices };

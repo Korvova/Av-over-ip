@@ -4,7 +4,7 @@ const prisma = require('../db');
 const driver = require('../drivers');
 const { broadcast } = require('../ws');
 const { requireAuth, requireAdmin } = require('../auth');
-const { saveFound, refreshIps, withFreshIp } = require('../devicesync');
+const { saveFound, refreshIps, withFreshIp, freshDevices } = require('../devicesync');
 
 const router = express.Router();
 
@@ -66,7 +66,8 @@ router.post('/add-all', requireAdmin, async (_req, res) => {
 // Без многоадресного режима энкодер отдаёт поток лишь ОДНОМУ декодеру: на стене
 // картинку видит только один экран, остальные перехватывают её друг у друга.
 router.get('/multicast', requireAdmin, async (_req, res) => {
-  const devices = await prisma.device.findMany({ where: { inSystem: true } });
+  // после перезагрузки адреса меняются — сначала убеждаемся, что все на связи
+  const devices = await freshDevices({ inSystem: true });
   const items = [];
   for (const d of devices) {
     let on = null; // null — устройство не ответило
@@ -85,14 +86,13 @@ router.get('/multicast', requireAdmin, async (_req, res) => {
 // POST /api/devices/multicast — включить многоадресный режим на всех устройствах.
 // Устройства при этом перезагружаются — иначе режим не применяется.
 router.post('/multicast', requireAdmin, async (_req, res) => {
-  const devices = await prisma.device.findMany({ where: { inSystem: true } });
+  const devices = await freshDevices({ inSystem: true });
   const errors = [];
   let changed = 0;
   for (const d of devices) {
     try {
       if (await withFreshIp(d, (dev) => driver.getMulticast(dev))) continue; // уже включён
-      const cur = await prisma.device.findUnique({ where: { id: d.id } }); // адрес мог обновиться
-      await driver.enableMulticast(cur);
+      await withFreshIp(d, (dev) => driver.enableMulticast(dev));
       changed++;
     } catch (e) {
       errors.push(`${d.name}: ${e.message || e}`);
