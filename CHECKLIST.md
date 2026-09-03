@@ -94,6 +94,8 @@
 
 > Объект 2026-09-02: многоадресный режим включён на 8/8; коммутация по IP хоста (e_reconnect::ip::v), по каналу декодер хост не находит (node_query); `astparam g` парсим через paramValue (значение склеено с «/ #»); адреса после reboot меняются — devicesync.js (withFreshIp/freshDevices/refreshIps) переискивает по MAC; discover = node_query ∪ arp-scan; сессии в БД (Session) + localStorage.
 
+> Объект 2026-09-02 (замечания инженера): видеостена = «подготовлена» + «включена» (VideoWall.active, POST /api/walls/:id/activate, helpers panelToWall/panelToMatrix в routes/videowalls.js); включённая стена — строка-потребитель в матрице видео (RoutingPage), её декодеры заняты (routing.js отказывает); «Режим видеовыхода» декодера применяется (POST /api/control/:id/wall-mode). IP устройств меняются даже БЕЗ перезагрузки — withFreshIp обязателен везде.
+
 > III.2/III.3: панель настроек (DeviceSettings.jsx + deviceSchema.js) сделана и проверена:
 > все секции и поля из ТЗ; поля с командами устройств шлют их сразу (EDID, LED, IR, SFP/медь,
 > IO, разрешение, аудиовход, видеовыход, сеть, маршрутизация сигналов, reboot/factory-reset).
