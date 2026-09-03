@@ -127,6 +127,12 @@ export default function DeviceSettings({ device, encoders, onClose, onChanged })
         });
       }, 'Параметры RS-232 сохранены (применятся после перезагрузки устройства)');
     }
+    if (field.apply === 'wallMode') {
+      return attempt(async () => {
+        await api(`/api/control/${device.id}/wall-mode`, { method: 'POST', body: { mode: value } });
+        await patchSettings();
+      }, value === 'wall' ? 'Декодер показывает свою часть видеостены' : 'Декодер вернулся в режим «Матрица» (полный кадр)');
+    }
     if (field.apply === 'routing') {
       return attempt(async () => {
         await patchSettings();

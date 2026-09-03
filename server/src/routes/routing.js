@@ -5,6 +5,7 @@ const driver = require('../drivers');
 const { broadcast } = require('../ws');
 const { requireAuth } = require('../auth');
 const { withFreshIp } = require('../devicesync');
+const { activeWallOf } = require('./videowalls').helpers;
 
 const router = express.Router();
 
@@ -27,6 +28,14 @@ router.post('/', requireAuth, async (req, res) => {
   if (!decoder || decoder.type !== 'DECODER') return res.status(400).json({ error: 'Декодер не найден' });
   if (encoderId != null && (!encoder || encoder.type !== 'ENCODER')) {
     return res.status(400).json({ error: 'Энкодер не найден' });
+  }
+  if (signal === 'video') {
+    const wall = await activeWallOf(decoder.id);
+    if (wall) {
+      return res.status(400).json({
+        error: `${decoder.name} занят видеостеной «${wall.name}» — источник для стены выбирается целиком (строка стены в матрице)`,
+      });
+    }
   }
 
   try {
@@ -68,7 +77,13 @@ router.post('/all-decoders', requireAuth, async (req, res) => {
   const encoder = await prisma.device.findUnique({ where: { id: Number(encoderId) } });
   if (!encoder || encoder.type !== 'ENCODER') return res.status(400).json({ error: 'Энкодер не найден' });
 
-  const decoders = await prisma.device.findMany({ where: { type: 'DECODER', inSystem: true } });
+  let decoders = await prisma.device.findMany({ where: { type: 'DECODER', inSystem: true } });
+  if (signal === 'video') {
+    // декодеры включённых видеостен матрице не принадлежат
+    const free = [];
+    for (const d of decoders) if (!(await activeWallOf(d.id))) free.push(d);
+    decoders = free;
+  }
   for (const decoder of decoders) {
     try {
       await withFreshIp(decoder, (dec) => driver.route(signal, encoder, dec));

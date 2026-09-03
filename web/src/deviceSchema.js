@@ -165,7 +165,7 @@ export function decoderSections(encoders) {
           paramKey: 'resolution',
           options: SCALING_OPTIONS.map((v) => ({ v, l: v === 'bypass' ? 'Bypass' : v })) },
         { key: 'showId', label: 'Отображение ID на видеовыходе', type: 'select', apply: 'store', options: onOff },
-        { key: 'outputMode', label: 'Режим видеовыхода', type: 'select', apply: 'store',
+        { key: 'outputMode', label: 'Режим видеовыхода', type: 'select', apply: 'wallMode',
           options: [{ v: 'matrix', l: 'Матрица' }, { v: 'wall', l: 'Видео стена' }] },
       ],
     },

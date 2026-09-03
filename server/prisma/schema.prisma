@@ -70,6 +70,8 @@ model VideoWall {
   rows          Int
   cols          Int
   monitoring    Boolean          @default(false)
+  /// стена включена: её декодеры в режиме стены и заняты (в матрице — строка стены)
+  active        Boolean          @default(false)
   bezel         Json             @default("{}") /// компенсация рамок панелей
   /// id энкодера, растянутого на всю стену (null = мозаика/пусто)
   spanEncoderId Int?

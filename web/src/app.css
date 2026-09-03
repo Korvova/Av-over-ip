@@ -278,6 +278,13 @@ label input:focus { outline: 2px solid #2d9cdb55; border-color: #2d9cdb; }
 .cell:hover .point { transform: scale(1.25); border-color: #2d9cdb; }
 .point.on { background: #2d9cdb; border-color: #1d6fa5; }
 
+.wall-head { background: #f6ecc9; }
+.wall-head.hl { background: #efdf9f; }
+.wall-head .enc-id { color: #7a5b00; }
+.wall-decs { font-size: 11px; color: #5a6b7b; }
+.wall-row .cell { background: #fffaf0; }
+.btn-tiny.btn-on { background: #2d9cdb; color: #fff; border-color: #1d6fa5; }
+
 /* ---------- Видеостены ---------- */
 .row-selected td { background: #eaf5fc; }
 .inline-input {

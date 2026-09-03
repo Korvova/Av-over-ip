@@ -48,6 +48,34 @@ router.post('/:id/param', requireAdmin, async (req, res) => {
   }
 });
 
+// POST /api/control/:id/wall-mode { mode: 'wall' | 'matrix' } — режим видеовыхода декодера.
+// «Видео стена» — вырез своей области стены, к которой он привязан; «Матрица» — полный кадр.
+router.post('/:id/wall-mode', requireAdmin, async (req, res) => {
+  const device = await getDevice(req, res);
+  if (!device) return;
+  const mode = req.body && req.body.mode === 'wall' ? 'wall' : 'matrix';
+  const { panelToWall, panelToMatrix } = require('./videowalls').helpers;
+  try {
+    if (mode === 'wall') {
+      const panel = await prisma.videoWallPanel.findFirst({
+        where: { decoderId: device.id },
+        include: { wall: true, decoder: true },
+      });
+      if (!panel) {
+        return res.status(400).json({
+          error: 'Декодер не привязан ни к одной видеостене — привяжите его на странице «Видео-стена»',
+        });
+      }
+      await panelToWall(panel.wall, panel);
+    } else {
+      await panelToMatrix({ decoder: device });
+    }
+    res.json({ ok: true, mode });
+  } catch (e) {
+    res.status(502).json({ error: String(e.message || e) });
+  }
+});
+
 // POST /api/control/:id/network { ip, netmask, gateway, dhcp }
 router.post('/:id/network', requireAdmin, async (req, res) => {
   const device = await getDevice(req, res);

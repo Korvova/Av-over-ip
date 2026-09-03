@@ -108,10 +108,10 @@ function WallList({ walls, encoders, decoders, isAdmin, onCreate, onBezel, run }
       <div className="tbl-wrap">
         <table className="tbl">
           <thead>
-            <tr><th>ID</th><th>Имя видеостены</th><th>Строки</th><th>Столбцы</th><th>Мониторинг</th>{isAdmin && <th></th>}</tr>
+            <tr><th>ID</th><th>Имя видеостены</th><th>Строки</th><th>Столбцы</th><th>Использовать</th><th>Мониторинг</th>{isAdmin && <th></th>}</tr>
           </thead>
           <tbody>
-            {walls.length === 0 && <tr><td colSpan={6} className="empty">Видеостены не созданы</td></tr>}
+            {walls.length === 0 && <tr><td colSpan={7} className="empty">Видеостены не созданы</td></tr>}
             {walls.map((w) => (
               <tr key={w.id}
                 className={wall && wall.id === w.id ? 'row-selected' : ''}
@@ -120,6 +120,16 @@ function WallList({ walls, encoders, decoders, isAdmin, onCreate, onBezel, run }
                 <td>{w.name}</td>
                 <td>{w.rows}</td>
                 <td>{w.cols}</td>
+                <td>
+                  <button className={'btn btn-tiny' + (w.active ? ' btn-on' : '')}
+                    onClick={(e) => { e.stopPropagation();
+                      run(() => api(`/api/walls/${w.id}/activate`, { method: 'POST', body: { active: !w.active } }),
+                        w.active
+                          ? `Видеостена «${w.name}» выключена — декодеры вернулись в режим «Матрица»`
+                          : `Видеостена «${w.name}» включена — декодеры показывают свои части стены`); }}>
+                    {w.active ? 'Включена — выключить' : 'Включить'}
+                  </button>
+                </td>
                 <td>
                   {isAdmin ? (
                     <button className="btn btn-tiny"
@@ -154,7 +164,15 @@ function WallList({ walls, encoders, decoders, isAdmin, onCreate, onBezel, run }
 
       {wall && (
         <>
-          <h3 className="tbl-title">Привязка декодеров: {wall.name} ({wall.rows}×{wall.cols})</h3>
+          <h3 className="tbl-title">
+            Привязка декодеров: {wall.name} ({wall.rows}×{wall.cols}) — {wall.active ? 'стена включена' : 'стена выключена'}
+          </h3>
+          {!wall.active && (
+            <p className="hint">
+              Привязка только готовит стену. Нажмите «Включить» — декодеры перейдут в режим видеостены
+              и покажут свои части общего источника, а в матрице коммутации стена появится строкой-потребителем.
+            </p>
+          )}
           <div className="wall-grid" style={{ gridTemplateColumns: `repeat(${wall.cols}, 1fr)` }}>
             {[...wall.panels].sort((a, b) => a.row - b.row || a.col - b.col).map((p) => (
               <div key={p.id} className="wall-panel-cfg">
@@ -288,7 +306,7 @@ function WallSources({ walls, encoders, decoders, routes, run }) {
                 setOverWall(null);
               }}
             >
-              {w.name} ({w.rows}×{w.cols}) — сюда: на всю стену
+              {w.name} ({w.rows}×{w.cols}){w.active ? '' : ' [выключена — включится при подаче источника]'} — сюда: на всю стену
             </div>
             <div className="wall-grid" style={{ gridTemplateColumns: `repeat(${w.cols}, 1fr)` }}>
               {[...w.panels].sort((a, b) => a.row - b.row || a.col - b.col).map((p) => {
