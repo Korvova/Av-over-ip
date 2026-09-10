@@ -32,6 +32,7 @@ model Device {
   firmware  String?
   online    Boolean    @default(false)
   uptimeSec Int        @default(0)
+  lastSeen  DateTime?  /// когда устройство последний раз отвечало (для «не в сети N мин»)
   inSystem  Boolean    @default(false) /// false = найден, но не добавлен в систему
   /// Все настройки устройства (LED, EDID, аудио, RS-232, порты IO/Relay, HDCP...)
   settings  Json       @default("{}")

@@ -13,6 +13,16 @@ function fmtUptime(sec) {
   return `${p(d)}д:${p(h)}ч:${p(m)}м`;
 }
 
+/** Сколько устройство не отвечает: «не в сети 12 мин» / «2 ч» / «3 дн.» */
+function offlineFor(d) {
+  if (!d.lastSeen) return '';
+  const min = Math.floor((Date.now() - new Date(d.lastSeen).getTime()) / 60000);
+  if (min < 1) return '';
+  if (min < 60) return `${min} мин`;
+  if (min < 48 * 60) return `${Math.floor(min / 60)} ч`;
+  return `${Math.floor(min / 1440)} дн.`;
+}
+
 /** Страница «Элементы системы» (ТЗ разд. III) */
 export default function DevicesPage({ isAdmin, onOpenWizard }) {
   const [tab, setTab] = useState('ENCODER'); // ENCODER | DECODER
@@ -55,7 +65,11 @@ export default function DevicesPage({ isAdmin, onOpenWizard }) {
     if (!isAdmin) return;
     try { setMcast(await api('/api/devices/multicast')); } catch { /* не критично */ }
   }
-  useEffect(() => { load().then(loadMulticast); }, []);
+  useEffect(() => {
+    load().then(loadMulticast);
+    // страница открыта — платформа сама сверяется с сетью: статусы, новые и пропавшие устройства
+    api('/api/devices/refresh', { method: 'POST' }).then(load).catch(() => {});
+  }, []);
   useWs((type) => {
     if (type === 'devices' || type === 'routing') load();
   });
@@ -159,7 +173,7 @@ export default function DevicesPage({ isAdmin, onOpenWizard }) {
                 <td>{d.firmware || '—'}</td>
                 <td>
                   <span className={'dot ' + (d.online ? 'on' : 'off')} />
-                  {d.online ? 'В сети' : 'Не в сети'}
+                  {d.online ? 'В сети' : 'Не в сети' + (offlineFor(d) ? ` ${offlineFor(d)}` : '')}
                 </td>
                 <td className="mono">{fmtUptime(d.uptimeSec)}</td>
                 {tab === 'ENCODER' ? (
@@ -171,8 +185,18 @@ export default function DevicesPage({ isAdmin, onOpenWizard }) {
                   <td>{sourceOf(d)}</td>
                 )}
                 {isAdmin && (
-                  <td>
+                  <td className="row-actions">
                     <button className="btn btn-small" onClick={() => setOpenId(d.id)}>Настройки</button>
+                    {!d.online && (
+                      <button className="btn btn-small btn-danger" title="Устройство снято — убрать из системы"
+                        disabled={busy}
+                        onClick={() => {
+                          if (!window.confirm(`${d.name} не в сети${offlineFor(d) ? ' ' + offlineFor(d) : ''}. Убрать из системы? Если устройство вернётся в сеть, оно снова появится в «Найденных».`)) return;
+                          run(() => api(`/api/devices/${d.id}`, { method: 'DELETE' }));
+                        }}>
+                        Снято
+                      </button>
+                    )}
                   </td>
                 )}
               </tr>
@@ -237,16 +261,10 @@ export default function DevicesPage({ isAdmin, onOpenWizard }) {
               onClick={() => run(() => api('/api/devices/add-all', { method: 'POST' }))}>
               Добавить все найденные устройства в систему
             </button>
-            {devices.some((d) => !d.online) && (
-              <button className="btn btn-danger" disabled={busy}
-                onClick={() => {
-                  const names = devices.filter((d) => !d.online).map((d) => d.name).join(', ');
-                  if (!window.confirm(`Убрать из списка устройства не в сети: ${names}? Если они снова появятся в сети, их найдёт поиск.`)) return;
-                  run(() => api('/api/devices/offline', { method: 'DELETE' }));
-                }}>
-                Убрать устройства не в сети
-              </button>
-            )}
+            <span className="hint">
+              Список следит за сетью сам: статусы обновляются каждые полминуты, новые устройства
+              появляются в «Найденных», пропавшие оттуда исчезают через 10 минут.
+            </span>
           </div>
 
           <div className="devices-actions">

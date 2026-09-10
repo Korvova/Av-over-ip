@@ -143,13 +143,11 @@ router.patch('/:id', requireAdmin, async (req, res) => {
   }
 });
 
-// DELETE /api/devices/offline — убрать все устройства, которые сейчас не в сети
-// (сняли/заменили оборудование: старые записи мешают, новые найдутся поиском)
-router.delete('/offline', requireAdmin, async (_req, res) => {
-  const gone = await prisma.device.findMany({ where: { online: false } });
-  await prisma.device.deleteMany({ where: { online: false } });
-  broadcast('devices', await prisma.device.findMany());
-  res.json({ removed: gone.length, names: gone.map((d) => d.name) });
+// POST /api/devices/refresh — внеочередной опрос сети (страница «Элементы системы» открыта):
+// статусы, новые устройства в «Найденные», пропавшие найденные — долой
+router.post('/refresh', requireAuth, async (_req, res) => {
+  const changed = await require('../statuspoll').pollNow({ discover: true });
+  res.json({ ok: true, changed });
 });
 
 // DELETE /api/devices/:id — удаление устройства из системы

@@ -278,6 +278,8 @@ label input:focus { outline: 2px solid #2d9cdb55; border-color: #2d9cdb; }
 .cell:hover .point { transform: scale(1.25); border-color: #2d9cdb; }
 .point.on { background: #2d9cdb; border-color: #1d6fa5; }
 
+.row-actions { white-space: nowrap; }
+.row-actions .btn + .btn { margin-left: 6px; }
 .wall-head { background: #f6ecc9; }
 .wall-head.hl { background: #efdf9f; }
 .wall-head .enc-id { color: #7a5b00; }
