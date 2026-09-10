@@ -237,6 +237,16 @@ export default function DevicesPage({ isAdmin, onOpenWizard }) {
               onClick={() => run(() => api('/api/devices/add-all', { method: 'POST' }))}>
               Добавить все найденные устройства в систему
             </button>
+            {devices.some((d) => !d.online) && (
+              <button className="btn btn-danger" disabled={busy}
+                onClick={() => {
+                  const names = devices.filter((d) => !d.online).map((d) => d.name).join(', ');
+                  if (!window.confirm(`Убрать из списка устройства не в сети: ${names}? Если они снова появятся в сети, их найдёт поиск.`)) return;
+                  run(() => api('/api/devices/offline', { method: 'DELETE' }));
+                }}>
+                Убрать устройства не в сети
+              </button>
+            )}
           </div>
 
           <div className="devices-actions">

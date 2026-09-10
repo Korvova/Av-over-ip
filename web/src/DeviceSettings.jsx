@@ -284,10 +284,7 @@ export default function DeviceSettings({ device, encoders, onClose, onChanged })
               onClick={() => {
                 if (!window.confirm(`Удалить ${device.name} из системы?`)) return;
                 attempt(async () => {
-                  await fetch(`/api/devices/${device.id}`, {
-                    method: 'DELETE',
-                    headers: { Authorization: `Bearer ${sessionStorage.getItem('token')}` },
-                  });
+                  await api(`/api/devices/${device.id}`, { method: 'DELETE' });
                   onClose();
                 });
               }}

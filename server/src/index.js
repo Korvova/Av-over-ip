@@ -49,6 +49,7 @@ seed()
   .then(() => {
     server.listen(PORT, () => {
       console.log(`ПУ AV-over-IP: http://localhost:${PORT} (драйвер: ${require('./drivers').name})`);
+      require('./statuspoll').start(); // «Статус» и «Активность» — с живых устройств
     });
   })
   .catch((e) => {
