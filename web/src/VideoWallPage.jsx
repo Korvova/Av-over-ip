@@ -12,7 +12,6 @@ export default function VideoWallPage({ isAdmin }) {
   const [notice, setNotice] = useState('');
   const [showCreate, setShowCreate] = useState(false);
   const [bezelWall, setBezelWall] = useState(null); // стена для окна «Компенсация рамок»
-  const [firstVisit, setFirstVisit] = useState(true);
 
   async function load() {
     try {
@@ -30,13 +29,9 @@ export default function VideoWallPage({ isAdmin }) {
       return [];
     }
   }
-  useEffect(() => {
-    load().then((w) => {
-      // ТЗ: при первом входе на страницу — всплывающее окно создания видеостены
-      if (firstVisit && w.length === 0 && isAdmin) setShowCreate(true);
-      setFirstVisit(false);
-    });
-  }, []);
+  // Окно создания открывается только кнопкой «Добавить видеостену»: всплывать само
+  // при входе на страницу оно не должно — случайный клик по вкладке раздражал (заказчик).
+  useEffect(() => { load(); }, []);
   useWs((type) => {
     if (type === 'walls' || type === 'devices' || type === 'routing') load();
   });
@@ -111,7 +106,7 @@ function WallList({ walls, encoders, decoders, isAdmin, onCreate, onBezel, run }
             <tr><th>ID</th><th>Имя видеостены</th><th>Строки</th><th>Столбцы</th><th>Использовать</th><th>Мониторинг</th>{isAdmin && <th></th>}</tr>
           </thead>
           <tbody>
-            {walls.length === 0 && <tr><td colSpan={7} className="empty">Видеостены не созданы</td></tr>}
+            {walls.length === 0 && <tr><td colSpan={7} className="empty">Видеостены не созданы — нажмите «Добавить видеостену»</td></tr>}
             {walls.map((w) => (
               <tr key={w.id}
                 className={wall && wall.id === w.id ? 'row-selected' : ''}
