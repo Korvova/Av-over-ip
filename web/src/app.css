@@ -278,6 +278,20 @@ label input:focus { outline: 2px solid #2d9cdb55; border-color: #2d9cdb; }
 .cell:hover .point { transform: scale(1.25); border-color: #2d9cdb; }
 .point.on { background: #2d9cdb; border-color: #1d6fa5; }
 
+.dev-thumb {
+  width: 96px; height: 54px; object-fit: cover; display: block;
+  border-radius: 4px; background: #111; cursor: zoom-in;
+}
+.dev-thumb.broken { opacity: 0.15; }
+.preview-big {
+  background: #fff; border-radius: 10px; padding: 12px;
+  max-width: 90vw; box-shadow: 0 10px 40px rgba(0,0,0,0.35);
+}
+.preview-big img { display: block; max-width: 86vw; max-height: 80vh; background: #111; border-radius: 6px; }
+.preview-big-title {
+  display: flex; justify-content: space-between; align-items: center;
+  gap: 16px; margin-bottom: 8px; font-weight: 600; color: #123c66;
+}
 .row-actions { white-space: nowrap; }
 .row-actions .btn + .btn { margin-left: 6px; }
 .wall-head { background: #f6ecc9; }

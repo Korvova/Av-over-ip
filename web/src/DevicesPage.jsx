@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { api } from './api.js';
+import { api, getToken } from './api.js';
 import { useWs } from './useWs.js';
 import DeviceSettings from './DeviceSettings.jsx';
 
@@ -36,6 +36,29 @@ export default function DevicesPage({ isAdmin, onOpenWizard }) {
   const [searching, setSearching] = useState(false); // идёт поиск устройств по сети
   const [mcast, setMcast] = useState(null);          // режим вещания устройств
   const [notice, setNotice] = useState('');           // что происходит после включения режима
+  const [tick, setTick] = useState(0);                // обновление превью раз в 5 с
+  const [big, setBig] = useState(null);               // энкодер, чей поток открыт крупно
+  useEffect(() => {
+    const t = setInterval(() => setTick((n) => n + 1), 5000);
+    return () => clearInterval(t);
+  }, []);
+  const token = getToken();
+  // снимок с энкодера через прокси платформы (браузер видео-сеть не видит)
+  const snap = (encId) => `/api/preview/${encId}/snapshot?w=192&h=108&q=60&token=${token}&t=${tick}`;
+  /** Энкодер, чей поток идёт на декодер (превью декодера = что ему приходит) */
+  function sourceEncoder(dec) {
+    const r = routes.find((r) => r.signal === 'video' && r.decoderId === dec.id);
+    return r && r.encoderId != null ? devices.find((d) => d.id === r.encoderId) : null;
+  }
+  function Thumb({ enc, note }) {
+    if (!enc || !enc.online) return <span className="hint">{note || '—'}</span>;
+    return (
+      <img className="dev-thumb" src={snap(enc.id)} alt="" title={note ? `${note} — открыть крупно` : 'Открыть крупно'}
+        onClick={() => setBig(enc)}
+        onError={(e) => { e.currentTarget.classList.add('broken'); }}
+        onLoad={(e) => { e.currentTarget.classList.remove('broken'); }} />
+    );
+  }
 
   async function load() {
     try {
@@ -154,7 +177,7 @@ export default function DevicesPage({ isAdmin, onOpenWizard }) {
         <table className="tbl">
           <thead>
             <tr>
-              <th>ID</th><th>Имя</th><th>MAC-адрес</th><th>IP-адрес</th><th>Прошивка</th>
+              <th>ID</th><th>Имя</th><th>Превью</th><th>MAC-адрес</th><th>IP-адрес</th><th>Прошивка</th>
               <th>Статус</th><th>Активность</th>
               {tab === 'ENCODER' ? <><th>Линии</th><th>Получатели</th></> : <th>Источник</th>}
               {isAdmin && <th></th>}
@@ -162,12 +185,17 @@ export default function DevicesPage({ isAdmin, onOpenWizard }) {
           </thead>
           <tbody>
             {inSystem.length === 0 && (
-              <tr><td colSpan={isAdmin ? 10 : 9} className="empty">Устройства не добавлены</td></tr>
+              <tr><td colSpan={isAdmin ? 11 : 10} className="empty">Устройства не добавлены</td></tr>
             )}
             {inSystem.map((d) => (
               <tr key={d.id}>
                 <td>{d.deviceId}</td>
                 <td>{d.name}</td>
+                <td>
+                  {d.type === 'ENCODER'
+                    ? <Thumb enc={d.online ? d : null} note={d.online ? '' : 'не в сети'} />
+                    : <Thumb enc={sourceEncoder(d)} note={sourceEncoder(d) ? `источник ${sourceEncoder(d).name}` : 'нет источника'} />}
+                </td>
                 <td className="mono">{d.mac}</td>
                 <td className="mono">{d.ip}</td>
                 <td>{d.firmware || '—'}</td>
@@ -285,6 +313,18 @@ export default function DevicesPage({ isAdmin, onOpenWizard }) {
             </span>
           </div>
         </>
+      )}
+
+      {big && (
+        <div className="modal-backdrop" onClick={() => setBig(null)}>
+          <div className="preview-big" onClick={(e) => e.stopPropagation()}>
+            <div className="preview-big-title">
+              {big.name} — живой поток
+              <button className="btn btn-small" onClick={() => setBig(null)}>Закрыть</button>
+            </div>
+            <img src={`/api/preview/${big.id}/stream?w=960&h=540&fps=10&token=${token}`} alt="" />
+          </div>
+        </div>
       )}
 
       {openDevice && (
