@@ -29,7 +29,7 @@ TITLES = {
     "index": "✅Платформа управления AV-over-IP.",
     "t-obshhie": "⌛Т. Общие требования",
     "t-pervyj-zapusk": "🔜Т. Первый запуск",
-    "t-elementy-sistemy": "🔜Т. Элементы системы",
+    "t-elementy-sistemy": "✅Т. Элементы системы",
     "t-enkodery": "⌛Т. Энкодеры",
     "t-dekodery": "⌛Т. Декодеры",
     "t-kommutaciya": "✅Т. Коммутация",
